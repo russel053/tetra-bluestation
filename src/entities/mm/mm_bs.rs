@@ -81,18 +81,19 @@ impl MmBs {
         }
 
         // Handle Energy Saving Mode request
-        let esi = if let Some(esm) = pdu.energy_saving_mode {
-            if esm != EnergySavingMode::StayAlive {
-                unimplemented_log!("Got req for EnergySavingMode {}, overriding with {}", esm, EnergySavingMode::StayAlive);
-            }
-            Some(EnergySavingInformation {
-                energy_saving_mode: EnergySavingMode::StayAlive,
-                frame_number: None, 
-                multiframe_number: None,
-            })
-        } else {
-            None
-        };
+        // let esi = if let Some(esm) = pdu.energy_saving_mode {
+        //     if esm != EnergySavingMode::StayAlive {
+        //         unimplemented_log!("Got req for EnergySavingMode {}, overriding with {}", esm, EnergySavingMode::StayAlive);
+        //     }
+        //     Some(EnergySavingInformation {
+        //         energy_saving_mode: EnergySavingMode::StayAlive,
+        //         frame_number: None, 
+        //         multiframe_number: None,
+        //     })
+        // } else {
+        //     None
+        // };
+        let esi = None;
 
         // Try to register the client
         let issi = prim.received_address.ssi;

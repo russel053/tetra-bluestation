@@ -43,7 +43,7 @@ fn main() {
 
     let args = Args::parse();
     
-    let msg = match (args.sap.as_str(), args.destination.as_str()) {
+    let _msg = match (args.sap.as_str(), args.destination.as_str()) {
         ("tmv", "umac") => {
             let pdu = TmvUnitdataInd {
                 pdu: BitBuffer::from_bitstr(args.bitstring.as_str()),
