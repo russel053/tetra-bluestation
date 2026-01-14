@@ -1,4 +1,4 @@
-use crate::{common::{address::TetraAddress, bitbuffer::BitBuffer, tdma_time::TdmaTime, tetra_common::Todo}, entities::{lmac::components::scramble::SCRAMB_INIT, mle::pdus::{d_mle_sync::DMleSync, d_mle_sysinfo::DMleSysinfo}, umac::{enums::{access_assign_dl_usage::AccessAssignDlUsage, access_assign_ul_usage::AccessAssignUlUsage, basic_slotgrant_cap_alloc::BasicSlotgrantCapAlloc, basic_slotgrant_granting_delay::BasicSlotgrantGrantingDelay, reservation_requirement::ReservationRequirement}, fields::basic_slotgrant::BasicSlotgrant, pdus::{access_assign::{AccessAssign, AccessField}, access_assign_fr18::AccessAssignFr18, mac_resource::MacResource, mac_sync::MacSync, mac_sysinfo::MacSysinfo}, subcomp::{fillbits, dl_frag::DlFragger}}}, saps::tmv::{TmvUnitdataReq, TmvUnitdataReqSlot, enums::logical_chans::LogicalChannel}, unimplemented_log};
+use crate::{common::{address::TetraAddress, bitbuffer::BitBuffer, tdma_time::TdmaTime, tetra_common::Todo}, entities::{lmac::components::scramble::SCRAMB_INIT, mle::pdus::{d_mle_sync::DMleSync, d_mle_sysinfo::DMleSysinfo}, phy::enums::burst::PhyBlockNum, umac::{enums::{access_assign_dl_usage::AccessAssignDlUsage, access_assign_ul_usage::AccessAssignUlUsage, basic_slotgrant_cap_alloc::BasicSlotgrantCapAlloc, basic_slotgrant_granting_delay::BasicSlotgrantGrantingDelay, reservation_requirement::ReservationRequirement}, fields::basic_slotgrant::BasicSlotgrant, pdus::{access_assign::{AccessAssign, AccessField}, access_assign_fr18::AccessAssignFr18, mac_resource::MacResource, mac_sync::MacSync, mac_sysinfo::MacSysinfo}, subcomp::{bs_frag::BsFragger, fillbits}}}, saps::tmv::{TmvUnitdataReq, TmvUnitdataReqSlot, enums::logical_chans::LogicalChannel}, unimplemented_log};
 
 /// We submit this many TX timeslots ahead of the current time
 pub const MACSCHED_TX_AHEAD: usize = 1;
@@ -24,17 +24,17 @@ pub struct PrecomputedUmacPdus {
 pub struct TimeslotSchedule {
     pub ul1: Option<u32>,
     pub ul2: Option<u32>,
-    pub dl: Option<TmvUnitdataReq>,
+    // pub dl: Option<TmvUnitdataReq>,
 }
 
 #[derive(Debug)]
 pub struct BsChannelScheduler {
     
-    pub cur_ts: TdmaTime,
+    pub cur_dltime: TdmaTime,
     scrambling_code: u32,
     precomps: PrecomputedUmacPdus,
     pub dltx_queues: [Vec<DlSchedElem>; 4],
-    sched: [[TimeslotSchedule; MACSCHED_NUM_FRAMES]; 4],
+    ulsched: [[TimeslotSchedule; MACSCHED_NUM_FRAMES]; 4],
 }
 
 #[derive(Debug)]
@@ -53,13 +53,13 @@ pub enum DlSchedElem {
     Resource(MacResource, BitBuffer),
 
     /// A FragBuf containing remaining non-transmitted information after a MAC-RESOURCE start has been transmitted
-    FragBuf(DlFragger),
+    FragBuf(BsFragger),
 }
 
 const EMPTY_SCHED_ELEM: TimeslotSchedule = TimeslotSchedule {
     ul1: None,
     ul2: None,
-    dl: None,
+    // dl: None,
 };
 const EMPTY_SCHED_CHANNEL: [TimeslotSchedule; MACSCHED_NUM_FRAMES] = [EMPTY_SCHED_ELEM; MACSCHED_NUM_FRAMES];
 const EMPTY_SCHED: [[TimeslotSchedule; MACSCHED_NUM_FRAMES]; 4] = [EMPTY_SCHED_CHANNEL; 4];
@@ -68,11 +68,11 @@ impl BsChannelScheduler {
     pub fn new(scrambling_code: u32, precomps: PrecomputedUmacPdus) -> Self {
         
         BsChannelScheduler {
-            cur_ts: TdmaTime {t: 0, f: 0, m: 0, h: 0}, // Intentionally invalid, updated in tick function
+            cur_dltime: TdmaTime {t: 0, f: 0, m: 0, h: 0}, // Intentionally invalid, updated in tick function
             scrambling_code: scrambling_code,
             precomps,
             dltx_queues: [Vec::new(), Vec::new(), Vec::new(), Vec::new()],
-            sched: EMPTY_SCHED,
+            ulsched: EMPTY_SCHED,
         }
     }
 
@@ -89,17 +89,17 @@ impl BsChannelScheduler {
     /// Fully wipe the schedule
     pub fn purge_schedule(&mut self) {
         self.dltx_queues = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
-        self.sched = EMPTY_SCHED;
+        self.ulsched = EMPTY_SCHED;
     }
 
     /// Sets the current downlink time to the given TdmaTime
     /// Wipes the schedule, as it can no longer be guaranteed to be valid
     pub fn set_dl_time(&mut self, new_ts: TdmaTime) {
-        self.cur_ts = new_ts;
+        self.cur_dltime = new_ts;
         self.purge_schedule();
     }
 
-    pub fn ts_to_sched_index(&self, ts: &TdmaTime) -> usize {
+    pub fn ul_ts_to_sched_index(&self, ts: &TdmaTime) -> usize {
         let to_index = (ts.f as usize - 1) + ((ts.m as usize - 1) * 18) + ((ts.h as usize * 18 * 60));
         to_index % MACSCHED_NUM_FRAMES       
     }
@@ -122,18 +122,18 @@ impl BsChannelScheduler {
             // let candidate_t = self.cur_ts.add_timeslots(dist as i32 * 4);
             // Base off of internal perception of time, convert to UL time
             // Below may crash someday, but I'd want to investigate that situation
-            let candidate_t = self.cur_ts.add_timeslots(dist as i32 * 4 - 2);
+            let candidate_t = self.cur_dltime.add_timeslots(dist as i32 * 4 - 2);
             assert!(candidate_t.t == ts, "ul_find_grant_opportunity: candidate_t.ts {} does not match requested ts {}. Please report this to developer. ", candidate_t.t, ts);
             
             tracing::debug!("ul_find_grant_opportunity: considering candidate ul_ts {}, have {:?}", candidate_t, grant_timeslots);
 
-            if self.cur_ts.is_mandatory_clch() {
+            if self.cur_dltime.is_mandatory_clch() {
                 // Not an opportunity; skip
                 continue;
             }
 
-            let index = self.ts_to_sched_index(&candidate_t);
-            let elem = &self.sched[ts as usize - 1][index];
+            let index = self.ul_ts_to_sched_index(&candidate_t);
+            let elem = &self.ulsched[ts as usize - 1][index];
             // tracing::debug!("ul_find_grant_opportunity: sched[{}] ts {}: {:?}", index, candidate_t, elem);
             if (elem.ul1.is_none() && elem.ul2.is_none()) || (is_halfslot && (elem.ul1.is_none() || elem.ul2.is_none())) {
 
@@ -163,9 +163,9 @@ impl BsChannelScheduler {
         assert!(!is_halfslot || grant_timestamps.len() == 1);
         // let ts = grant_timestamps[0].t as usize;
         for ts in grant_timestamps {
-            let index = self.ts_to_sched_index(&ts);
+            let index = self.ul_ts_to_sched_index(&ts);
             
-            let elem: &mut TimeslotSchedule = &mut self.sched[ts.t as usize - 1][index];
+            let elem: &mut TimeslotSchedule = &mut self.ulsched[ts.t as usize - 1][index];
             if is_halfslot {
                 if elem.ul1.is_none() {
                     elem.ul1 = Some(ssi);
@@ -206,6 +206,9 @@ impl BsChannelScheduler {
 
             // Reserve the target granting opportunity. Get subslot (only relevant for halfslot reservation)
             let subslot = self.ul_reserve_grant(addr.ssi, grant_timestamps, is_halfslot);
+            
+            // tracing::info!("After grant:")
+            // self.dump_ul_schedule_full(false);
                     
             // Build BasicSlotgrant response element
             let cap_alloc = if res_req == &ReservationRequirement::Req1Subslot {
@@ -232,17 +235,37 @@ impl BsChannelScheduler {
         }
     }    
 
+    /// Returns schedule info for the given uplink timeslot and full-or-subslot
+    /// If Both is requested, schedule is assumed to have matching allocation for two subslots
+    /// If not, a warning is issued and None is returned. 
+    pub fn ul_get_slot_owner(&self, ts: TdmaTime, slot: PhyBlockNum) -> Option<u32> {
+        let sched = &self.ulsched[ts.t as usize - 1][self.ul_ts_to_sched_index(&ts)];
+        match slot {
+            PhyBlockNum::Block1 => {
+                sched.ul1
+            },
+            PhyBlockNum::Block2 => {
+                sched.ul2
+            },
+            PhyBlockNum::Both => {
+                if sched.ul1 != sched.ul2 {
+                    tracing::warn!("ul_get_slot_owner: requested Both but ul1 {:?} != ul2 {:?}", sched.ul1, sched.ul2);
+                    return None;
+                }
+                sched.ul1
+            },
+            _ => unreachable!()
+        }
+    }
+
     fn ul_get_usage(&self, ts: TdmaTime) -> AccessAssignUlUsage {
         
-        let ul_sched = &self.sched[ts.t as usize - 1][self.ts_to_sched_index(&ts)];
-        assert!(ul_sched.ul1.is_some() || ul_sched.ul2.is_none());
-        
-        if ul_sched.ul1.is_some() && ul_sched.ul2.is_some() {
-            AccessAssignUlUsage::AssignedOnly
-        } else if ul_sched.ul1.is_some() {
-            AccessAssignUlUsage::CommonAndAssigned
-        } else {
-            AccessAssignUlUsage::CommonOnly
+        let ul_sched = &self.ulsched[ts.t as usize - 1][self.ul_ts_to_sched_index(&ts)];
+        match (ul_sched.ul1, ul_sched.ul2) {
+            (Some(_), Some(_)) => AccessAssignUlUsage::AssignedOnly,
+            (Some(_), None) => AccessAssignUlUsage::CommonAndAssigned,
+            (None, None) => AccessAssignUlUsage::CommonOnly,
+            _ => unreachable!("ul2 can't be set with ul1 None"),
         }
     }
 
@@ -268,7 +291,7 @@ impl BsChannelScheduler {
         self.dltx_queues[timeslot as usize - 1].push(elem);
     }
 
-    pub fn dl_enqueue_tma_frag(&mut self, timeslot: u8, fragger: DlFragger) {
+    pub fn dl_enqueue_tma_frag(&mut self, timeslot: u8, fragger: BsFragger) {
         tracing::debug!("dl_enqueue_tma_frag: ts {} enqueueing {:?}", timeslot, fragger);
         let elem = DlSchedElem::FragBuf(fragger);
         self.dltx_queues[timeslot as usize - 1].push(elem);
@@ -470,8 +493,8 @@ impl BsChannelScheduler {
 
     pub fn tick_start(&mut self, ts: TdmaTime) {
         // Increment current time
-        self.cur_ts = self.cur_ts.add_timeslots(1);
-        assert!(ts == self.cur_ts, "BsChannelScheduler tick_start: ts mismatch, expected {}, got {}", self.cur_ts, ts);
+        self.cur_dltime = self.cur_dltime.add_timeslots(1);
+        assert!(ts == self.cur_dltime, "BsChannelScheduler tick_start: ts mismatch, expected {}, got {}", self.cur_dltime, ts);
     }
 
     /// Prepares a scheduled FUTURE timeslot for transfer to lmac and transmission
@@ -482,7 +505,7 @@ impl BsChannelScheduler {
     pub fn finalize_ts_for_tick(&mut self) -> TmvUnitdataReqSlot {
 
         // We finalize a FUTURE slot: cur_ts plus some number of timeslots
-        let ts = self.cur_ts.add_timeslots(MACSCHED_TX_AHEAD as i32);
+        let ts = self.cur_dltime.add_timeslots(MACSCHED_TX_AHEAD as i32);
         self.precomps.mac_sync.time = ts;
         self.precomps.mac_sysinfo1.hyperframe_number = Some(ts.h);
         self.precomps.mac_sysinfo2.hyperframe_number = Some(ts.h);
@@ -669,10 +692,16 @@ impl BsChannelScheduler {
             blk2.mac_block.seek(0);
         }
 
+        // tracing::warn!("start finalize");
+        // self.dump_ul_schedule_full(false);
+
         // Clear UL schedule for this timeslot
-        let index = self.ts_to_sched_index(&ts);
-        self.sched[ts.t as usize - 1][index].ul1 = None;
-        self.sched[ts.t as usize - 1][index].ul2 = None;
+        let index = self.ul_ts_to_sched_index(&ts.add_timeslots(-2));
+        self.ulsched[ts.t as usize - 1][index].ul1 = None;
+        self.ulsched[ts.t as usize - 1][index].ul2 = None;
+
+        // tracing::warn!("end finalize");
+        // self.dump_ul_schedule_full(false);
 
         // We now have our bbk, blk1 and (optional) blk2
         elem
@@ -833,23 +862,53 @@ impl BsChannelScheduler {
             _ => panic!() // never happens
         }
     }
-    
 
     pub fn dump_ul_schedule(&self, skip_empty: bool) {
-        tracing::trace!("Dumping uplink schedule:");
+        let ultime = self.cur_dltime.add_timeslots(-2);
+        tracing::info!("Dumping uplink schedule for {}:", ultime);
         for dist in 0..MACSCHED_NUM_FRAMES {
-            let ts = self.cur_ts.add_timeslots(dist as i32 * 4);
-            let index = self.ts_to_sched_index(&ts);
-            let elem = &self.sched[ts.t as usize - 1][index];
-            if skip_empty && elem.ul1.is_none() && elem.ul2.is_none() && elem.dl.is_none() {
+            let ts = ultime.add_timeslots(dist as i32 * 4);
+            let index = self.ul_ts_to_sched_index(&ts);
+            let elem = &self.ulsched[ts.t as usize - 1][index];
+            if skip_empty && elem.ul1.is_none() && elem.ul2.is_none() {
                 continue;
             }
-            tracing::trace!("  Schedule {}: {:?}", ts, elem);
+            tracing::info!("  Schedule {}: {:?}", ts, elem);
+        }
+    }
+
+    
+    pub fn dump_ul_schedule_full(&self, skip_empty: bool) {
+        
+        let mut ultime = self.cur_dltime.clone();
+        ultime.t = 1;
+        tracing::info!("Dumping uplink schedule for {}:", ultime);
+        
+        for dist in 0..MACSCHED_NUM_FRAMES {
+            let ts = ultime.add_timeslots(dist as i32 * 4);
+            let index = self.ul_ts_to_sched_index(&ts);
+            if skip_empty && self.ulsched[0][index].ul1.is_none() && self.ulsched[0][index].ul2.is_none() &&
+               self.ulsched[1][index].ul1.is_none() && self.ulsched[1][index].ul2.is_none() &&
+               self.ulsched[2][index].ul1.is_none() && self.ulsched[2][index].ul2.is_none() &&
+               self.ulsched[3][index].ul1.is_none() && self.ulsched[3][index].ul2.is_none() {
+                continue;
+            }
+            tracing::info!("  Schedule {}: ({} / {})  ({} / {})  ({} / {})  ({} / {})", 
+                ts, 
+                self.ulsched[0][index].ul1.map_or("-".to_string(), |v| v.to_string()),
+                self.ulsched[0][index].ul2.map_or("-".to_string(), |v| v.to_string()),
+                self.ulsched[1][index].ul1.map_or("-".to_string(), |v| v.to_string()),
+                self.ulsched[1][index].ul2.map_or("-".to_string(), |v| v.to_string()),
+                self.ulsched[2][index].ul1.map_or("-".to_string(), |v| v.to_string()),
+                self.ulsched[2][index].ul2.map_or("-".to_string(), |v| v.to_string()),
+                self.ulsched[3][index].ul1.map_or("-".to_string(), |v| v.to_string()),
+                self.ulsched[3][index].ul2.map_or("-".to_string(), |v| v.to_string())
+            );
         }
     }
 
     pub fn dump_dl_queue(&self) {
-        tracing::trace!("Dumping downlink queue:");
+        tracing::info!("Dumping downlink queue:");
         for (index, elem) in self.dltx_queues.iter().enumerate() {
             for e in elem {
                 tracing::trace!("  ts[{}] {:?}", index, e);
@@ -979,7 +1038,7 @@ mod tests {
         }; 
         
         let mut sched = BsChannelScheduler::new(1, precomps);
-        sched.set_dl_time(TdmaTime::default());
+        sched.set_dl_time(TdmaTime::default().add_timeslots(2));
         sched
     }
 
@@ -992,6 +1051,8 @@ mod tests {
         let grant1 = sched.ul_process_cap_req(1, addr, &resreq);
         tracing::info!("grant1: {:?}", grant1);
         assert!(grant1.is_some(), "ul_process_cap_req should return Some, but got None");
+
+        sched.dump_ul_schedule(false);
 
         let u1 = sched.ul_get_usage(TdmaTime { t: 1, f: 1, m: 1, h: 0 });
         let u2 = sched.ul_get_usage(TdmaTime { t: 1, f: 2, m: 1, h: 0 });
@@ -1006,10 +1067,14 @@ mod tests {
         let cap_alloc2 = grant2.unwrap().capacity_allocation;
         assert_eq!(cap_alloc2, BasicSlotgrantCapAlloc::SecondSubslotGranted, "ul_process_cap_req should return SecondSubslotGranted, but got {:?}", cap_alloc2);
 
+        sched.dump_ul_schedule(false);
+
         let u1 = sched.ul_get_usage(TdmaTime { t: 1, f: 1, m: 1, h: 0 });
         let u2 = sched.ul_get_usage(TdmaTime { t: 1, f: 2, m: 1, h: 0 });
         let u3 = sched.ul_get_usage(TdmaTime { t: 1, f: 3, m: 1, h: 0 });
         tracing::info!("usage ts 1/2/3: {:?}/{:?}/{:?}", u1, u2, u3);
+
+        sched.dump_ul_schedule(false);
 
     }
 
@@ -1047,7 +1112,7 @@ mod tests {
         assert_eq!(grant2.granting_delay, BasicSlotgrantGrantingDelay::DelayNOpportunities(1));
     }
 
-        #[test] 
+    #[test] 
     fn test_dl_grant_and_ack_integration() {
         let mut sched = get_testing_slotter();
         let ts = TdmaTime::default();
@@ -1078,4 +1143,23 @@ mod tests {
         assert!(sched.dltx_queues[ts.t as usize - 1].len() == 1);
 
     }
+
+    #[test]
+    fn test_downlink_fragmentation() {
+        unimplemented!("write tests for downlink fragmentation")
+    }
+
+    #[test]
+    fn test_downlink_fragmentation_multiple_ssis() {
+        unimplemented!("write tests for downlink fragmentation")
+    }
+
+    #[test]
+    fn test_downlink_fragmentation_multiple_msgs_for_same_ssi() {
+        // This test should assert that when multiple messages are in the queue for the same MS, the fragments are sent in-order. E.g., 
+        // we dont start fragmenting a second resource before the first one is full sent (and maybe acknowledged?). 
+        unimplemented!("write tests for downlink fragmentation")
+    }
+
+    
 }

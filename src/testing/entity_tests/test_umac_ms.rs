@@ -2,6 +2,7 @@
 mod tests {
 
     use crate::config::stack_config::StackMode;
+    use crate::entities::phy::enums::burst::PhyBlockNum;
     use crate::saps::sapmsg::{SapMsg, SapMsgInner};
     use crate::saps::tmv::enums::logical_chans::LogicalChannel;
     use crate::saps::tmv::TmvUnitdataInd;
@@ -33,6 +34,7 @@ mod tests {
             msg: SapMsgInner::TmvUnitdataInd(
                 TmvUnitdataInd {
                     pdu: BitBuffer::from_bitstr("0010001000110001011010110000101010001010000100000000110000010000100000000000000000000000000000000000000000000000000000000000"),
+                    block_num: PhyBlockNum::Block1,
                     logical_channel: LogicalChannel::SchHd,
                     crc_pass: true,
                     scrambling_code: 0,
@@ -79,6 +81,7 @@ mod tests {
             msg: SapMsgInner::TmvUnitdataInd(
                 TmvUnitdataInd {
                     pdu: BitBuffer::from_bitstr("0000000111111001011010110000101001100011000000110100111101011010111110000100110000110000100100011000000000001100010101000000"),
+                    block_num: PhyBlockNum::Block1,
                     logical_channel: LogicalChannel::SchHd,
                     crc_pass: true,
                     scrambling_code: 0,
@@ -96,6 +99,7 @@ mod tests {
             msg: SapMsgInner::TmvUnitdataInd(
                 TmvUnitdataInd {
                     pdu: BitBuffer::from_bitstr("0111000100110000000000010011001000110000001101000010110000110001010000000000110000010000100000000000000000000000000000000000"),
+                    block_num: PhyBlockNum::Block1,
                     logical_channel: LogicalChannel::SchHd,
                     crc_pass: true,
                     scrambling_code: 0,
@@ -141,6 +145,7 @@ mod tests {
                 TmvUnitdataInd {
                     // mac_block: BitBuffer::from_bitstr("1000001100101010010000000000110001101001011100000000001110001111100000100000000000010111100001100000111111000000110101100111"),
                     pdu: BitBuffer::from_bitstr("1000010000111111010001000000100001101001111100000000000000011101000011100000000000000000000000101111111111100101110101110111"),
+                    block_num: PhyBlockNum::Block2,
                     logical_channel: LogicalChannel::Bnch,
                     crc_pass: true,
                     scrambling_code: 0,
@@ -185,6 +190,7 @@ mod tests {
                 TmvUnitdataInd {
                     pdu: BitBuffer::from_bitstr("000100000111010110010010000000001101001000000100010101110011"),
                     // pdu: BitBuffer::from_bitstr("000100000111100100111110000000000110011000000000000101111001"),
+                    block_num: PhyBlockNum::Block1,
                     logical_channel: LogicalChannel::Bsch,
                     crc_pass: true,
                     scrambling_code: 0,
@@ -225,6 +231,7 @@ mod tests {
             msg: SapMsgInner::TmvUnitdataInd(
                 TmvUnitdataInd {
                     pdu: BitBuffer::from_bitstr("0010000010001110000000000000000001100101110110001000100110001001010001101100100100011110001110010011000000000001001100111110000000001000000000000001000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+                    block_num: PhyBlockNum::Both,
                     logical_channel: LogicalChannel::SchF,
                     crc_pass: true,
                     scrambling_code: 0,

@@ -3,6 +3,7 @@ use std::panic;
 use crate::common::freqs::FreqInfo;
 use crate::common::messagerouter::MessageQueue;
 
+use crate::entities::phy::enums::burst::PhyBlockNum;
 use crate::saps::tmv::enums::logical_chans::LogicalChannel;
 
 use crate::saps::tma::TmaUnitdataInd;
@@ -39,7 +40,7 @@ use crate::entities::umac::subcomp::fillbits;
 use crate::entities::umac::subcomp::bs_sched::{BsChannelScheduler, PrecomputedUmacPdus};
 use crate::{assert_warn, unimplemented_log};
 
-use super::subcomp::defrag::MacDefrag;
+use super::subcomp::bs_defrag::BsDefrag;
 
 /// Each tick, we submit a frame for TX (-> Lmac -> Phy). 
 /// This constant determines how many timeslots in the future we submit for
@@ -56,7 +57,7 @@ pub struct UmacBs {
     endpoint_id: u32,
 
     /// Subcomponents
-    defrag: MacDefrag,
+    defrag: BsDefrag,
     event_label_store: EventLabelStore,
     
     /// Contains UL/DL scheduling logic
@@ -74,7 +75,7 @@ impl UmacBs {
             self_component: TetraEntity::Umac,
             config,
             endpoint_id: 0, 
-            defrag: MacDefrag::new(),
+            defrag: BsDefrag::new(),
             event_label_store: EventLabelStore::new(),
             channel_scheduler: BsChannelScheduler::new(scrambling_code, precomps),
         }
@@ -209,20 +210,23 @@ impl UmacBs {
     }
 
     pub fn rx_tmv_unitdata_ind(&mut self, queue: &mut MessageQueue, mut message: SapMsg) {
-        tracing::trace!("rx_tmv_unitdata_ind");
         
         let SapMsgInner::TmvUnitdataInd(prim) = &mut message.msg else {panic!()};
+        tracing::trace!("rx_tmv_unitdata_ind: {:?}", prim.logical_channel);
             
         match prim.logical_channel {
-            LogicalChannel::Stch | 
-            LogicalChannel::SchF| 
-            LogicalChannel::SchHu => {
-                tracing::trace!("rx_tmv_unitdata_ind: {:?}", prim.logical_channel);
+            LogicalChannel::SchF => {
+                // Full slot signalling
+                assert!(prim.block_num == PhyBlockNum::Both, "{:?} can't have block_num {:?}", prim.logical_channel, prim.block_num);
                 self.rx_tmv_sch(queue, message);
-            }
-            _ => {
-                panic!("rx_tmv_unitdata_ind: Unknown logical channel {:?}", prim.logical_channel);
-            }
+            },
+            LogicalChannel::Stch | 
+            LogicalChannel::SchHu => {
+                // Half slot signalling
+                assert!(matches!(prim.block_num, PhyBlockNum::Block1 | PhyBlockNum::Block2), "{:?} can't have block_num {:?}", prim.logical_channel, prim.block_num);
+                self.rx_tmv_sch(queue, message);
+            },
+            _ => unreachable!("invalid channel: {:?}", prim.logical_channel)
         }
     }
 
@@ -778,15 +782,20 @@ impl UmacBs {
         prim.pdu.set_raw_end(prim.pdu.get_raw_start() + pdu_len_bits);
         tracing::debug!("rx_mac_frag_ul: pdu_len_bits: {} fill_bits: {}", pdu_len_bits, num_fill_bits);
 
-        // Decrypt if needed
+        // Get slot owner from schedule, decrypt if needed
         let ul_time = message.dltime.add_timeslots(-2);
-        if let Some(_aie_info) = self.defrag.get_aie_info(ul_time) {
+        let Some(slot_owner) = self.channel_scheduler.ul_get_slot_owner(ul_time, prim.block_num) else {
+            tracing::warn!("rx_mac_frag_ul: Received MAC-FRAG-UL for unassigned block {:?}", prim.block_num);
+            self.channel_scheduler.dump_ul_schedule_full(true);
+            return;
+        };
+        if let Some(_aie_info) = self.defrag.get_aie_info(slot_owner, ul_time) {
             unimplemented_log!("rx_mac_frag_ul: Encryption not supported");
             return;
         }
 
         // Insert into defragmenter
-        self.defrag.insert_next(&mut prim.pdu, ul_time);
+        self.defrag.insert_next(&mut prim.pdu, slot_owner, ul_time);
     }
 
     fn rx_mac_end_ul(&mut self, queue: &mut MessageQueue, message: &mut SapMsg) {
@@ -832,17 +841,19 @@ impl UmacBs {
         prim.pdu.set_raw_end(prim.pdu.get_raw_start() + pdu_len_bits);
         tracing::trace!("rx_mac_end_ul: pdu: {} sdu: {} fb: {}: {}", pdu_len_bits, prim.pdu.get_len_remaining(), num_fill_bits, prim.pdu.dump_bin_full(true));
 
-        // Decrypt if needed
+        // Get slot owner from schedule, decrypt if needed
         let ul_time = message.dltime.add_timeslots(-2);
-        if let Some(_aie_info) = self.defrag.get_aie_info(ul_time) {
+        let Some(slot_owner) = self.channel_scheduler.ul_get_slot_owner(ul_time, prim.block_num) else {
+            tracing::warn!("rx_mac_end_ul: Received MAC-END-UL for unassigned block {:?}", prim.block_num);
+            self.channel_scheduler.dump_ul_schedule_full(true);
+            return;
+        };
+        if let Some(_aie_info) = self.defrag.get_aie_info(slot_owner, ul_time) {
             unimplemented!("rx_mac_end_ul: Encryption not supported");
         }
 
-        // Insert into defragmenter
-        self.defrag.insert_last(&mut prim.pdu, ul_time);
-
-        // Fetch finalized block
-        let defragbuf = self.defrag.take_defragged_buf(ul_time);
+        // Insert last fragment and retrieve finalized block
+        let defragbuf = self.defrag.insert_last(&mut prim.pdu, slot_owner, ul_time);
         let Some(defragbuf) = defragbuf else {
             tracing::warn!("rx_mac_end_ul: could not obtain defragged buf");
             return;
@@ -947,17 +958,19 @@ impl UmacBs {
         // set to trace
         tracing::trace!("rx_mac_end_hu: pdu: {} sdu: {} fb: {}: {}", pdu_len_bits, prim.pdu.get_len_remaining(), num_fill_bits, prim.pdu.dump_bin_full(true));
 
-        // Decrypt if needed
+        // Get slot owner from schedule, decrypt if needed
         let ul_time = message.dltime.add_timeslots(-2);
-        if let Some(_aie_info) = self.defrag.get_aie_info(ul_time) {
+        let Some(slot_owner) = self.channel_scheduler.ul_get_slot_owner(ul_time, prim.block_num) else {
+            tracing::warn!("rx_mac_end_hu: Received MAC-END-HU for unassigned block {:?}", prim.block_num);
+            self.channel_scheduler.dump_ul_schedule_full(true);
+            return;
+        };
+        if let Some(_aie_info) = self.defrag.get_aie_info(slot_owner, ul_time) {
             unimplemented!("rx_mac_end_hu: Encryption not supported");
         }
 
-        // Insert into defragmenter
-        self.defrag.insert_last(&mut prim.pdu, ul_time);
-
-        // Fetch finalized block
-        let defragbuf = self.defrag.take_defragged_buf(ul_time);
+        // Insert last fragment and retrieve finalized block
+        let defragbuf = self.defrag.insert_last(&mut prim.pdu, slot_owner, ul_time);
         let Some(defragbuf) = defragbuf else {
             tracing::warn!("rx_mac_end_hu: could not obtain defragged buf");
             return;
@@ -1159,7 +1172,7 @@ impl TetraEntityTrait for UmacBs {
         if self.config.config().stack_mode == StackMode::Bs {
             
             let Some(ts) = ts else { panic!() };
-            if self.channel_scheduler.cur_ts != ts && self.channel_scheduler.cur_ts == (TdmaTime {t: 0, f: 0, m: 0, h: 0}) {
+            if self.channel_scheduler.cur_dltime != ts && self.channel_scheduler.cur_dltime == (TdmaTime {t: 0, f: 0, m: 0, h: 0}) {
                 // Upon start of the system, we need to set the dl time for the channel scheduler
                 self.channel_scheduler.set_dl_time(ts);
             } else {

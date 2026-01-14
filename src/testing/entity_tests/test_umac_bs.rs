@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::{common::{address::{SsiType, TetraAddress}, bitbuffer::BitBuffer, debug, tdma_time::TdmaTime, tetra_common::Sap, tetra_entities::TetraEntity}, config::stack_config::StackMode, saps::{lmm::LmmMleUnitdataReq, sapmsg::{SapMsg, SapMsgInner}, tmv::{TmvUnitdataInd, enums::logical_chans::LogicalChannel}}, testing::component_test::{ComponentTest, default_test_config}};
+    use crate::{common::{address::{SsiType, TetraAddress}, bitbuffer::BitBuffer, debug, tdma_time::TdmaTime, tetra_common::Sap, tetra_entities::TetraEntity}, config::stack_config::StackMode, entities::phy::enums::burst::PhyBlockNum, saps::{lmm::LmmMleUnitdataReq, sapmsg::{SapMsg, SapMsgInner}, tmv::{TmvUnitdataInd, enums::logical_chans::LogicalChannel}}, testing::component_test::{ComponentTest, default_test_config}};
 
     #[test]
     fn test_in_fragmented_sch_hu_and_sch_f() {
@@ -13,6 +13,7 @@ mod tests {
         let time_vec1 = TdmaTime::default().add_timeslots(2); // Uplink time: 0/1/1/1, dl time 0/1/1/3
         let test_prim1 = TmvUnitdataInd {
             pdu: BitBuffer::from_bitstr(test_vec1),
+            block_num: PhyBlockNum::Block1,
             logical_channel: LogicalChannel::SchHu,
             crc_pass: true,
             scrambling_code: 864282631};
@@ -24,6 +25,7 @@ mod tests {
             msg: SapMsgInner::TmvUnitdataInd(test_prim1)};
         let test_prim2 = TmvUnitdataInd {
             pdu: BitBuffer::from_bitstr(test_vec2),
+            block_num: PhyBlockNum::Both,
             logical_channel: LogicalChannel::SchF,
             crc_pass: true,
             scrambling_code: 864282631};
@@ -73,6 +75,7 @@ mod tests {
         let time_vec1 = TdmaTime::default().add_timeslots(2); // Uplink time: 0/1/1/1, dl time 0/1/1/3
         let test_prim1 = TmvUnitdataInd {
             pdu: BitBuffer::from_bitstr(test_vec1),
+            block_num: PhyBlockNum::Block1,
             logical_channel: LogicalChannel::SchHu,
             crc_pass: true,
             scrambling_code: 864282631};
@@ -84,6 +87,7 @@ mod tests {
             msg: SapMsgInner::TmvUnitdataInd(test_prim1)};
         let test_prim2 = TmvUnitdataInd {
             pdu: BitBuffer::from_bitstr(test_vec2),
+            block_num: PhyBlockNum::Block1,
             logical_channel: LogicalChannel::SchHu,
             crc_pass: true,
             scrambling_code: 864282631};

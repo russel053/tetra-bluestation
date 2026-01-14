@@ -5,6 +5,7 @@ use crate::common::messagerouter::{MessagePrio, MessageQueue};
 use crate::saps::tlmb::TlmbSysinfoInd;
 use crate::saps::tmv::enums::logical_chans::LogicalChannel;
 use crate::saps::tma::TmaUnitdataInd;
+use crate::entities::phy::enums::burst::PhyBlockNum;
 use crate::saps::tmv::TmvConfigureReq;
 
 use crate::common::bitbuffer::BitBuffer;
@@ -26,7 +27,7 @@ use crate::entities::umac::pdus::mac_sync::MacSync;
 use crate::entities::umac::pdus::mac_sysinfo::MacSysinfo;
 use crate::unimplemented_log;
 
-use super::subcomp::defrag::MacDefrag;
+use super::subcomp::ms_defrag::MsDefrag;
 use super::subcomp::fillbits;
 
 
@@ -34,7 +35,7 @@ pub struct UmacMs {
     // config: Option<SharedConfig>,
     self_component: TetraEntity,
     config: SharedConfig,
-    defrag: MacDefrag,
+    defrag: MsDefrag,
 
     /// Provided by MLE over TlmbSap, to compute scrambling code, which is passed to lmac
     mcc: Option<u16>,
@@ -51,7 +52,7 @@ impl UmacMs {
         Self { 
             self_component: TetraEntity::Umac,
             config,
-            defrag: MacDefrag::new(),
+            defrag: MsDefrag::new(),
             
             mcc: None,
             mnc: None,
@@ -73,31 +74,33 @@ impl UmacMs {
     }
 
     pub fn rx_tmv_unitdata_ind(&mut self, queue: &mut MessageQueue, mut message: SapMsg) {
-        tracing::trace!("rx_tmv_unitdata_ind");
         
         let SapMsgInner::TmvUnitdataInd(prim) = &mut message.msg else {panic!()};
+        tracing::trace!("rx_tmv_unitdata_ind: {:?}", prim.logical_channel);
             
         match prim.logical_channel {
             LogicalChannel::Aach => {
-                tracing::trace!("rx_tmv_unitdata_ind: AACH");
                 self.rx_tmv_aach(queue, message);
             }
-
+            
             LogicalChannel::Bsch => {
-                tracing::trace!("rx_tmv_unitdata_ind: BSCH");
                 self.rx_tmv_bsch(queue, message);
             }
 
+            LogicalChannel::SchF => {
+                // Full slot signalling
+                assert!(prim.block_num == PhyBlockNum::Both, "{:?} can't have block_num {:?}", prim.logical_channel, prim.block_num);
+                self.rx_tmv_sch(queue, message);
+            }, 
+
             LogicalChannel::Bnch | 
             LogicalChannel::Stch | 
-            LogicalChannel::SchF| 
             LogicalChannel::SchHd => {
-                tracing::trace!("rx_tmv_unitdata_ind: {:?}", prim.logical_channel);
+                // Half slot signalling
+                assert!(matches!(prim.block_num, PhyBlockNum::Block1 | PhyBlockNum::Block2), "{:?} can't have block_num {:?}", prim.logical_channel, prim.block_num);
                 self.rx_tmv_sch(queue, message);
-            }
-            _ => {
-                panic!("rx_tmv_unitdata_ind: Unknown logical channel {:?}", prim.logical_channel);
-            }
+            },
+            _ => unreachable!("invalid channel: {:?}", prim.logical_channel)
         }
     }
 

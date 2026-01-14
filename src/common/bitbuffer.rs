@@ -255,6 +255,38 @@ impl BitBuffer {
         self.buffer[index] ^= value << (7 - (self.pos % 8)) as u8;
         self.pos += 1;
     }
+    
+    /// Xors bytearray into a bitbuffer, starting at pos, for num_bits.
+    /// Advances pos by num_bits.
+    pub fn xor_bytearr(&mut self, data: &[u8], num_bits: usize) -> Option<()>{
+        let mut bits_remaining = num_bits;
+        let mut data_pos = 0;
+        while bits_remaining > 0 {
+            // Read chunk of bits
+            let chunk_bits = usize::min(bits_remaining, 64);
+            bits_remaining -= chunk_bits;
+            let val = self.read_bits(chunk_bits)?;
+            // println!("xor_bytearr: read chunk_bits {}, val {:X}", chunk_bits, val);
+
+            // Convert bytes from data array to u64 and xor with read val
+            let mut xor_data = 0u64;
+            let db_chunk_bytes = (chunk_bits +7) / 8;
+            for _ in 0..db_chunk_bytes {
+                xor_data <<= 8;
+                xor_data |= data[data_pos] as u64;
+                data_pos += 1;
+            }
+            xor_data >>= (8 - (chunk_bits % 8)) % 8; // shift back if last byte is not fully applied
+            let xorred_data = val ^ xor_data;
+
+            // println!("xor_bytearr: chunk_bits {}, val {:X}, xor_data {:X}, xorred_data {:X}", chunk_bits, val, xor_data, xorred_data);
+
+            // Seek back to where we were before reading
+            self.seek_rel(-1 * chunk_bits as isize);
+            self.write_bits(xorred_data, chunk_bits);
+        };
+        Some(())
+    }
 
     /// Write a single bit to pos
     pub fn write_bit(&mut self, value: u8) {
@@ -800,5 +832,39 @@ mod tests {
         let mut arr = vec![0u8; 8];
         bb.to_bitarr(&mut arr);
         assert_eq!(arr, vec![1,0,1,1,0,0,1,1]);
+    }
+
+    #[test]
+    fn test_xor_bit() {
+        let mut bb = BitBuffer::from_bitstr("10110000");
+        // XOR first bit (1) with 0 -> should remain 1
+        bb.xor_bit(0);
+        // XOR second bit (0) with 1 -> should become 1  
+        bb.xor_bit(1);
+        // XOR third bit (1) with 1 -> should become 0
+        bb.xor_bit(1);
+        // bb.seek(0);
+        // Check final pattern: original was "10110000", after XORs should be "11010000"
+        assert_eq!(bb.to_bitstr(), "11010000");
+    }
+
+    #[test]
+    fn test_xor_bits() {
+        let mut bb = BitBuffer::from_bitstr("0000000000000000");
+        let xor_buf = vec![0b11000000, 0b11110000]; // Two bits are set OUTSIDE the xor area
+        bb.seek(2); 
+        bb.xor_bytearr(&xor_buf, 10).unwrap();
+        println!("{}", bb.dump_bin());
+        assert_eq!(bb.to_bitstr(), "0011000000110000");
+    }
+
+    #[test]
+    fn test_xor_bits_twochunks() {
+        let mut bb = BitBuffer::from_bitstr("000000000000000000000000000000000000000000000000000000000000000000000000");
+        let xor_buf = vec![0b11000000, 0b11000000, 0b11000000, 0b11000000, 0b11000000, 0b11000000, 0b11000000, 0b11000000, 0b00111100]; // Two bits are set OUTSIDE the xor area
+        bb.seek(2); 
+        bb.xor_bytearr(&xor_buf, 68).unwrap();
+        println!("{}", bb.dump_bin());
+        assert_eq!(bb.to_bitstr(), "001100000011000000110000001100000011000000110000001100000011000000001100");
     }
 }

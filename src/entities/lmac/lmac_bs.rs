@@ -143,6 +143,7 @@ impl LmacBs {
 
         assert!(lchan.is_control_channel(), "rx_blk_cp: lchan {:?} is not a signalling channel", lchan);
 
+        let block_num = blk.block_num;
         let (type1bits, crc_pass) = 
                 errorcontrol::decode_cp(lchan, blk, Some(self.scrambling_code));
         let type1bits = type1bits.unwrap(); // Guaranteed since scramb code set
@@ -169,6 +170,7 @@ impl LmacBs {
                 TmvUnitdataInd {
                     pdu: type1bits,
                     logical_channel: lchan,
+                    block_num,
                     crc_pass,
                     scrambling_code: self.scrambling_code
                 }

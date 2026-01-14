@@ -3,6 +3,7 @@ pub mod enums;
 use crate::common::tdma_time::TdmaTime;
 use crate::common::tetra_common::Todo;
 use crate::common::bitbuffer::BitBuffer;
+use crate::entities::phy::enums::burst::PhyBlockNum;
 use crate::saps::tmv::enums::logical_chans::LogicalChannel;
 
 
@@ -40,7 +41,13 @@ pub struct TmvUnitdataReqSlot {
 #[derive(Debug)]
 pub struct TmvUnitdataInd {
     pub pdu: BitBuffer,
+    
+    /// While not in the spec, the Umac needs to know which block this is.
+    /// For instance, in order to determine the owner of a UL halfslot containing a MAC-FRAG (which doesn't contain an SSI field)
+    pub block_num: PhyBlockNum,
+    
     pub logical_channel: LogicalChannel,
+
     /// If no CRC is present on this message type (for example, for AACH), crc_pass is set to True
     pub crc_pass: bool,
     pub scrambling_code: u32,

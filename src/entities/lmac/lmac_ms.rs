@@ -96,6 +96,7 @@ impl LmacMs {
             msg: SapMsgInner::TmvUnitdataInd(
                 TmvUnitdataInd {
                     pdu: type1,
+                    block_num: PhyBlockNum::Undefined,
                     logical_channel: LogicalChannel::Aach,
                     crc_pass: true,
                     scrambling_code
@@ -156,6 +157,7 @@ impl LmacMs {
 
     fn rx_blk_cp(&mut self, queue: &mut MessageQueue, blk: TpUnitdataInd, lchan: LogicalChannel) {
 
+        let block_num = blk.block_num;
         let (type1bits, crc_pass) = 
                 errorcontrol::decode_cp(lchan, blk, self.scrambling_code);
 
@@ -187,6 +189,7 @@ impl LmacMs {
                 msg: SapMsgInner::TmvUnitdataInd(
                     TmvUnitdataInd {
                         pdu: type1bits,
+                        block_num,
                         logical_channel: lchan,
                         crc_pass,
                         scrambling_code: scramb_code

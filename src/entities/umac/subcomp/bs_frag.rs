@@ -5,7 +5,7 @@ use crate::common::bitbuffer::BitBuffer;
 
 
 #[derive(Debug)]
-pub struct DlFragger {
+pub struct BsFragger {
     resource: MacResource,
     mac_hdr_is_written: bool,
     done: bool,
@@ -15,13 +15,13 @@ pub struct DlFragger {
 /// We won't start fragmentation if less than MIN_SLOT_CAP_FOR_FRAG_START bits are free in the slot
 const MIN_SLOT_CAP_FOR_FRAG_START: usize = 32; 
 
-impl DlFragger {
+impl BsFragger {
 
     pub fn new(resource: MacResource, sdu: BitBuffer) -> Self {
         assert!(sdu.get_pos() == 0, "SDU must be at the start of the buffer");
         // We set the length field now. If we do fragmentation, we'll set it to -1 later. 
         // resource.update_len_and_fill_ind(sdu.get_len());
-        DlFragger { 
+        BsFragger { 
             resource,
             mac_hdr_is_written: false,
             done: false,
@@ -194,7 +194,7 @@ impl DlFragger {
 
 #[cfg(test)]
 mod tests {
-    use crate::{common::{address::{SsiType, TetraAddress}, bitbuffer::BitBuffer, debug}, entities::umac::{pdus::{mac_end_dl::MacEndDl, mac_frag_dl::MacFragDl, mac_resource::MacResource}, subcomp::{bs_sched::{SCH_F_CAP, SCH_HD_CAP}, dl_frag::DlFragger}}};
+    use crate::{common::{address::{SsiType, TetraAddress}, bitbuffer::BitBuffer, debug}, entities::umac::{pdus::{mac_end_dl::MacEndDl, mac_frag_dl::MacFragDl, mac_resource::MacResource}, subcomp::{bs_sched::{SCH_F_CAP, SCH_HD_CAP}, bs_frag::BsFragger}}};
 
     fn get_default_resource() -> MacResource {
         MacResource {
@@ -223,7 +223,7 @@ mod tests {
         let sdu = BitBuffer::from_bitstr("111000111");
         let mut mac_block = BitBuffer::new(SCH_F_CAP);
         
-        let mut fragger = DlFragger::new(pdu, sdu);
+        let mut fragger = BsFragger::new(pdu, sdu);
         let done = fragger.get_next_chunk(&mut mac_block);
         mac_block.seek(0);
 
@@ -238,7 +238,7 @@ mod tests {
         let mut reconstructed = String::new();
         let pdu = get_default_resource();
         let sdu = BitBuffer::from_bitstr(vec);
-        let mut fragger = DlFragger::new(pdu, sdu);
+        let mut fragger = BsFragger::new(pdu, sdu);
 
         let mut mac_block = BitBuffer::new(SCH_HD_CAP);
         let done = fragger.get_next_chunk(&mut mac_block);
@@ -285,21 +285,27 @@ mod tests {
         assert!(reconstructed.starts_with(vec), "Original vec should be contained in reconstructed string");
     }
 
-
     #[test]
     fn test_low_cap_start_and_no_room_for_fill_bits() { 
+
+        // TODO FIXME: after further reading of the spec, while the searched behavior is not incorrect,
+        // this test is suboptimal. The SDU entirely fits into the second mac_block, but fill bits would
+        // not fit. HOwever, the spec states we may supply a higher lenght_ind, and the effective lenght
+        // will be capped by the mac_block size. Thus, no fill bits need to be added. 
+        // TODO: adapt the behavior, and adapt test to verify sdu fits exactly into the second slot. 
+
         debug::setup_logging_verbose();
         let vec = "010101100100110000";
         let pdu = get_default_resource();
         let sdu = BitBuffer::from_bitstr(vec);
-        let mut fragger = DlFragger::new(pdu, sdu);
+        let mut fragger = BsFragger::new(pdu, sdu);
 
         let mut mac_block = BitBuffer::new(30); // Too small for proper message
         let done = fragger.get_next_chunk(&mut mac_block);
         tracing::info!("[1]: {}", mac_block.dump_bin());
         assert!(!done);
 
-        let mut mac_block = BitBuffer::new(61); // Too small for proper message
+        let mut mac_block = BitBuffer::new(61); // Contains all SDU bits; but can't fit fill bits??
         let done = fragger.get_next_chunk(&mut mac_block);
         tracing::info!("[2]: {}", mac_block.dump_bin());
         assert!(!done, "fill bits shouldnt fit");

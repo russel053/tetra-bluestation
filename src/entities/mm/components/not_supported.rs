@@ -18,7 +18,7 @@ pub fn make_ul_mm_pdu_function_not_supported(
     pdu.to_bitbuf(&mut sdu).unwrap(); // we want to know when this happens
     sdu.seek(0);
     
-    let debug_str = format!("-> {:?} sdu {}", pdu, sdu.dump_bin());
+    let debug_str = format!("{:?} sdu {}", pdu, sdu.dump_bin());
 
     // Package
     let addr = TetraAddress { 

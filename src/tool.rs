@@ -8,7 +8,7 @@ mod testing;
 
 use clap::Parser;
 
-use crate::{common::{bitbuffer::BitBuffer, tdma_time::TdmaTime, tetra_common::Sap, tetra_entities::TetraEntity}, saps::{sapmsg::{SapMsg, SapMsgInner}, tmv::{TmvUnitdataInd, enums::logical_chans::LogicalChannel}}};
+use crate::{common::{bitbuffer::BitBuffer, tdma_time::TdmaTime, tetra_common::Sap, tetra_entities::TetraEntity}, entities::phy::enums::burst::PhyBlockNum, saps::{sapmsg::{SapMsg, SapMsgInner}, tmv::{TmvUnitdataInd, enums::logical_chans::LogicalChannel}}};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -47,6 +47,7 @@ fn main() {
         ("tmv", "umac") => {
             let pdu = TmvUnitdataInd {
                 pdu: BitBuffer::from_bitstr(args.bitstring.as_str()),
+                block_num: PhyBlockNum::Both,
                 logical_channel: LogicalChannel::SchF,
                 crc_pass: true,
                 scrambling_code: 0,

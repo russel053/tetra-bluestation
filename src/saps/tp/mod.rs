@@ -5,7 +5,7 @@ pub struct TpUnitdataInd{
     pub train_type: TrainingSequence,
     pub burst_type: BurstType,
     pub block_type: PhyBlockType,
-    /// Undefined for BBK, Block1, Block2 or Both for all others
+    /// Undefined for BBK. For all others: [ Block1 | Block2 | Both ]
     pub block_num: PhyBlockNum, 
     pub block: BitBuffer,
 }
