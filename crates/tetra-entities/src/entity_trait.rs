@@ -18,8 +18,8 @@ pub trait TetraEntityTrait: Send + AsAny {
     fn set_config(&mut self, _config: SharedConfig) {}
     
     /// Called at the start of each TDMA tick
-    fn tick_start(&mut self, _queue: &mut MessageQueue, _ts: Option<TdmaTime>) { }
+    fn tick_start(&mut self, _queue: &mut MessageQueue, _ts: TdmaTime) { }
     
     /// Called at the end of each TDMA tick
-    fn tick_end(&mut self, _queue: &mut MessageQueue, _ts: Option<TdmaTime>) -> bool { false }
+    fn tick_end(&mut self, _queue: &mut MessageQueue, _ts: TdmaTime) -> bool { false }
 }

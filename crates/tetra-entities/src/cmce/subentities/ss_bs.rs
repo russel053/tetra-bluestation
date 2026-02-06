@@ -3,13 +3,13 @@ use tetra_saps::SapMsg;
 
 
 /// Clause 12 Supplementary Services CMCE sub-entity
-pub struct SsSubentity{
+pub struct SsBsSubentity{
 }
 
-impl SsSubentity {
+impl SsBsSubentity {
     
     pub fn new() -> Self {
-        SsSubentity {}
+        SsBsSubentity {}
     }
 
     pub fn route_re_deliver(&mut self, _queue: &mut MessageQueue, mut _message: SapMsg) {

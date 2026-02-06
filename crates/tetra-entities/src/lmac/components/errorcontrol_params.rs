@@ -1,7 +1,5 @@
 use tetra_saps::tmv::enums::logical_chans::LogicalChannel;
 
-
-
 /// Each LogicalChannel is associated with a set of error control parameters.
 #[derive(Debug)]
 pub struct ErrorControlParams {

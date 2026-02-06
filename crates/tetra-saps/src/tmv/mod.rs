@@ -1,8 +1,9 @@
 pub mod enums;
 
-use tetra_core::{BitBuffer, PhyBlockNum, TdmaTime, Todo};
+use tetra_core::{BitBuffer, PhyBlockNum, PhysicalChannel, TdmaTime, Todo};
 
 use crate::tmv::enums::logical_chans::LogicalChannel;
+
 
 
 
@@ -16,10 +17,11 @@ pub struct TmvUnitdataReq {
 
 
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct TmvUnitdataReqSlot {
     /// Timeslot at which this block is to be transmitted
     pub ts: TdmaTime,
+    pub ul_phy_chan: PhysicalChannel,
     
     /// First MAC block in this timeslot. May be received from LLC
     /// If none was received, UMAC auto-generates a SYNC SB1 broadcast block

@@ -3,6 +3,7 @@ use core::fmt;
 use tetra_core::{BitBuffer, expect_pdu_type, pdu_parse_error::PduParseErr};
 use tetra_core::typed_pdu_fields::*;
 use crate::cmce::enums::{cmce_pdu_type_dl::CmcePduTypeDl, type3_elem_id::CmceType3ElemId};
+use crate::cmce::fields::basic_service_information::BasicServiceInformation;
 
 
 /// Representation of the D-ALERT PDU (Clause 14.7.1.1).
@@ -25,7 +26,7 @@ pub struct DAlert {
     /// Type1, 1 bits, Call queued
     pub call_queued: bool,
     /// Type2, 8 bits, See note 2,
-    pub basic_service_information: Option<u64>,
+    pub basic_service_information: Option<BasicServiceInformation>,
     /// Type2, 6 bits, Notification indicator
     pub notification_indicator: Option<u64>,
     /// Type3, Facility
@@ -57,7 +58,7 @@ impl DAlert {
         let mut obit = delimiters::read_obit(buffer)?;
 
         // Type2
-        let basic_service_information = typed::parse_type2_generic(obit, buffer, 8, "basic_service_information")?;
+        let basic_service_information = typed::parse_type2_struct(obit, buffer, BasicServiceInformation::from_bitbuf)?;
         
         // Type2
         let notification_indicator = typed::parse_type2_generic(obit, buffer, 6, "notification_indicator")?;
@@ -108,7 +109,7 @@ impl DAlert {
         if !obit { return Ok(()); }
 
         // Type2
-        typed::write_type2_generic(obit, buffer, self.basic_service_information, 8);
+        typed::write_type2_struct(obit, buffer, &self.basic_service_information, BasicServiceInformation::to_bitbuf)?;
 
         // Type2
         typed::write_type2_generic(obit, buffer, self.notification_indicator, 6);

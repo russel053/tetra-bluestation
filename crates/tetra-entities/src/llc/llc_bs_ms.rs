@@ -22,6 +22,7 @@ pub struct AckData {
 }
 
 pub struct Llc {
+    dltime: TdmaTime,
     config: SharedConfig,
     scheduled_out_acks: Vec<AckData>,
     expected_in_acks: Vec<AckData>,
@@ -34,6 +35,7 @@ pub struct Llc {
 impl Llc {
     pub fn new(config: SharedConfig) -> Self {
         Self { 
+            dltime: TdmaTime::default(),
             config,
             // bl_links: BlLinkManager::new(),
             scheduled_out_acks: Vec::new(),
@@ -103,6 +105,9 @@ impl Llc {
             SapMsgInner::TmaUnitdataInd(_) => {
                 self.rx_tma_unitdata_ind(queue, message);
             }
+            SapMsgInner::TmaReportInd(_) => {
+                self.rx_tma_report_ind(queue, message);
+            }
             _ => {
                 panic!();
             }
@@ -158,7 +163,6 @@ impl Llc {
             tracing::debug!("-> {:?} sdu {}", pdu, pdu_buf.dump_bin());
         }
         
-
         // TODO FIXME:
         // According to the spec we should issue a TL-REPORT to the upper layer
         // self.issue_tla_report_ind(queue, TlaReport::ConfirmHandle);
@@ -178,7 +182,9 @@ impl Llc {
                 subscriber_class: prim.subscriber_class,
                 air_interface_encryption: prim.air_interface_encryption,
                 stealing_repeats_flag: prim.stealing_repeats_flag,
-                data_category: prim.data_class_info
+                data_category: prim.data_class_info,
+                chan_alloc: prim.chan_alloc,
+                // redundant_transmission: prim.redundant_transmission,
             })
         };        
         queue.push_back(sapmsg);
@@ -197,6 +203,11 @@ impl Llc {
             _ => panic!()
         }
     }
+
+    fn rx_tma_report_ind(&mut self, _queue: &mut MessageQueue, mut _message: SapMsg) {
+        tracing::trace!("rx_tma_report_ind, ignoring");
+    }
+
 
     /// Clause 20.4.1.1.4 TMA-UNITDATA primitive
     /// TMA-UNITDATA indication: this primitive shall be used by the MAC to deliver a received TM-SDU. This primitive
@@ -323,14 +334,14 @@ impl Llc {
         // If ns is present, we need to send an ACK
         if let Some(ns) = ns {
             // Send ACK
-            let ul_time = message.dltime.add_timeslots(-2);
-            self.schedule_outgoing_ack(ul_time, prim.main_address, ns);
+            // let ul_time = message.dltime.add_timeslots(-2);
+            self.schedule_outgoing_ack(message.dltime, prim.main_address, ns);
         }
 
         // if nr is present, we have received an ACK on a previous message
         if let Some(nr) = nr {
-            let ul_time = message.dltime.add_timeslots(-2);
-            self.process_incoming_ack(ul_time.t, prim.main_address, nr);
+            // let ul_time = message.dltime.add_timeslots(-2);
+            self.process_incoming_ack(message.dltime.t, prim.main_address, nr);
         }
 
         if pdu_type == LlcPduType::BlAck || pdu_type == LlcPduType::BlAckFcs {
@@ -347,9 +358,9 @@ impl Llc {
         let s = if pdu_type == LlcPduType::BlUdata || pdu_type == LlcPduType::BlUdataFcs {
             // Unacknowledged data transfer service
             let m = TlaTlUnitdataIndBl {
-                address_type: 0, // TODO FIXME
+                // address_type: 0, // TODO FIXME
                 main_address: prim.main_address,
-                link_id: 0, // TODO FIXME
+                link_id: message.dltime.add_timeslots(-2).t as u32,
                 endpoint_id: prim.endpoint_id,
                 new_endpoint_id: prim.new_endpoint_id,
                 css_endpoint_id: prim.css_endpoint_id,
@@ -372,9 +383,9 @@ impl Llc {
         } else {
             // Acknowledged data transfer service
             let m = TlaTlDataIndBl {
-                address_type: 0, // TODO FIXME
+                // address_type: 0, // TODO FIXME
                 main_address: prim.main_address,
-                link_id: 0, // TODO FIXME
+                link_id: message.dltime.add_timeslots(-2).t as u32,
                 endpoint_id: prim.endpoint_id,
                 new_endpoint_id: prim.new_endpoint_id,
                 css_endpoint_id: prim.css_endpoint_id,
@@ -413,6 +424,8 @@ impl TetraEntityTrait for Llc {
     fn rx_prim(&mut self, queue: &mut MessageQueue, message: SapMsg) {
         
         tracing::debug!("rx_prim: {:?}", message);
+        // tracing::debug!(ts=%message.dltime, "rx_prim: {:?}", message);        
+
         match message.sap {
             Sap::TmaSap => {
                 self.rx_tma_prim(queue, message);
@@ -427,7 +440,11 @@ impl TetraEntityTrait for Llc {
         }
     }
 
-    fn tick_end(&mut self, queue: &mut MessageQueue, ts: Option<TdmaTime>) -> bool{
+    fn tick_start(&mut self, _queue: &mut MessageQueue, ts: TdmaTime) { 
+        self.dltime = ts;
+    }
+
+    fn tick_end(&mut self, queue: &mut MessageQueue, _ts: TdmaTime) -> bool{
         
         // Check if any unsent ACKs are still here
         // Take oldest element from scheduled_out_acks, and remove it from the list
@@ -445,22 +462,28 @@ impl TetraEntityTrait for Llc {
             pdu_buf.seek(0);
             tracing::debug!("-> {:?} {}", pdu, pdu_buf.dump_bin());
 
+            // We're sending an ACK for a received uplink message, however, we don't have that message here
+            // Since DL is two slots ahead of UL, we will correct that. We now have the dltime for reception 
+            // of the original message.
+            let dltime = self.dltime.add_timeslots(-2);
+
             let sapmsg = SapMsg {
                 sap: Sap::TmaSap,
-                src: self.entity(),
+                src: TetraEntity::Llc,
                 dest: TetraEntity::Umac,
-                dltime: ts.unwrap_or_default(),
+                dltime, 
                 msg: SapMsgInner::TmaUnitdataReq(TmaUnitdataReq {
                     req_handle: 0, // TODO FIXME
                     pdu: pdu_buf,
                     main_address: ack.addr,
                     // scrambling_code: self.config.config().scrambling_code(),
-                    endpoint_id: ack.t_start.t as i32, // TODO FIXME
+                    endpoint_id: 0, // todo fixme
                     stealing_permission: false, // TODO FIXME
                     subscriber_class: 0, // TODO FIXME
                     air_interface_encryption: None, // TODO FIXME
                     stealing_repeats_flag: None, // TODO FIXME
-                    data_category: None // TODO FIXME
+                    data_category: None, // TODO FIXME
+                    chan_alloc: None // TODO FIXME
                 })
             };        
             queue.push_back(sapmsg);

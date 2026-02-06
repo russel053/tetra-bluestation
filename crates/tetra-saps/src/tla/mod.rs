@@ -1,5 +1,7 @@
 #![allow(unused)]
-use tetra_core::{BitBuffer, TetraAddress, Todo};
+use tetra_core::{BitBuffer, EndpointId, LinkId, TetraAddress, Todo};
+
+use crate::lcmc::fields::chan_alloc_req::CmceChanAllocReq;
 
 
 #[derive(Debug)]
@@ -10,11 +12,11 @@ pub struct TlCancelReq {
 /// advanced link
 #[derive(Debug)]
 pub struct TlConnectReq {
-    address_type: Todo,
+    // address_type: Todo,
     main_address: Todo,
     scrambling_code: Todo,
-    link_id: Todo,
-    endpoint_id: Todo,    
+    link_id: LinkId,
+    endpoint_id: EndpointId,    
     pdu_prio: Todo,
     stealing_permission: bool,
     subscriber_class: Todo,
@@ -27,11 +29,11 @@ pub struct TlConnectReq {
 /// advanced link
 #[derive(Debug)]
 pub struct TlConnectInd {
-    address_type: Todo,
+    // address_type: Todo,
     main_address: Todo,
     scrambling_code: Todo,
-    link_id: Todo,
-    endpoint_id: Todo,    
+    link_id: LinkId,
+    endpoint_id: EndpointId,    
     new_endpoint_id: Option<Todo>,
     css_endpoint_id: Option<Todo>,
     qos: Todo,
@@ -46,11 +48,11 @@ pub struct TlConnectInd {
 /// advanced link
 #[derive(Debug)]
 pub struct TlConnectResp {
-    address_type: Todo,
+    // address_type: Todo,
     main_address: Todo,
     scrambling_code: Todo,
-    link_id: Todo,
-    endpoint_id: Todo,   
+    link_id: LinkId,
+    endpoint_id: EndpointId,   
     pdu_prio: Todo,
     stealing_permission: bool,     
     subscriber_class: Todo,
@@ -63,11 +65,11 @@ pub struct TlConnectResp {
 /// advanced link
 #[derive(Debug)]
 pub struct TlConnectConf {
-    address_type: Todo,
+    // address_type: Todo,
     main_address: Todo,
     scrambling_code: Todo,
-    link_id: Todo,
-    endpoint_id: Todo,    
+    link_id: LinkId,
+    endpoint_id: EndpointId,    
     new_endpoint_id: Option<Todo>,
     css_endpoint_id: Option<Todo>,
     qos: Todo,
@@ -98,8 +100,8 @@ pub struct TlDataConfAl;
 pub struct TlaTlDataReqBl {
     // pub address_type: Todo, 
     pub main_address: TetraAddress,
-    pub link_id: Todo,
-    pub endpoint_id: Todo,
+    pub link_id: LinkId,
+    pub endpoint_id: EndpointId,
     pub tl_sdu: BitBuffer,
     // pub scrambling_code: u32, // TODO FIXME: according to the spec, should be there, but why do we need to provide this?
     // pub pdu_prio: Todo, // Optional feature
@@ -111,6 +113,12 @@ pub struct TlaTlDataReqBl {
     pub data_class_info: Option<Todo>,
     pub req_handle: Todo,
     pub graceful_degradation: Option<Todo>,
+    
+    // Custom fields for BS stack:
+    /// Optional Channel Allocation Request that may be included by CMCE
+    pub chan_alloc: Option<CmceChanAllocReq>,
+    // Number of identical retransmissions
+    // pub redundant_transmission: u8, 
 }
 
 /// Clause 20.3.5.1.4 
@@ -118,12 +126,12 @@ pub struct TlaTlDataReqBl {
 // user.
 #[derive(Debug)]
 pub struct TlaTlDataIndBl {
-    pub address_type: Todo, 
+    // pub address_type: Todo, 
     pub main_address: TetraAddress,
-    pub link_id: Todo,
-    pub endpoint_id: Todo,
-    pub new_endpoint_id: Option<Todo>,
-    pub css_endpoint_id: Option<Todo>,
+    pub link_id: LinkId,
+    pub endpoint_id: EndpointId,
+    pub new_endpoint_id: Option<EndpointId>,
+    pub css_endpoint_id: Option<EndpointId>,
     pub tl_sdu: Option<BitBuffer>,
     pub scrambling_code: u32,
     pub fcs_flag: bool,
@@ -140,10 +148,10 @@ pub struct TlaTlDataIndBl {
 // explicit acknowledgement from the peer entity.
 #[derive(Debug)]
 pub struct TlDataRespBl {
-    pub address_type: Todo, 
+    // pub address_type: Todo, 
     pub main_address: TetraAddress,
-    pub link_id: Todo,
-    pub endpoint_id: Todo,
+    pub link_id: LinkId,
+    pub endpoint_id: EndpointId,
     pub tl_sdu: BitBuffer,
     pub scrambling_code: Todo,
     pub pdu_prio: Todo,
@@ -162,10 +170,10 @@ pub struct TlDataRespBl {
 // peer entity before transmission of the acknowledgement, the confirm primitive may or may not carry a TL-SDU.
 #[derive(Debug)]
 pub struct TlDataConfBl {
-    pub address_type: Todo, 
+    // pub address_type: Todo, 
     pub main_address: TetraAddress,
-    pub link_id: Todo,
-    pub endpoint_id: Todo,
+    pub link_id: LinkId,
+    pub endpoint_id: EndpointId,
     pub new_endpoint_id: Option<Todo>,
     pub css_endpoint_id: Option<Todo>,
     pub tl_sdu: Option<BitBuffer>,
@@ -202,16 +210,16 @@ pub struct TlReceiveInd;
 // advanced link
 #[derive(Debug)]
 pub struct TlReleaseReq {
-    pub address_type: Todo,
+    // pub address_type: Todo,
     pub main_address: TetraAddress,
-    pub link_id: Todo,
+    pub link_id: LinkId,
 }
 #[derive(Debug)]
 pub struct TlReleaseInd {
-    pub address_type: Todo,
+    // pub address_type: Todo,
     pub main_address: TetraAddress,
     pub link_id: Option<Todo>,
-    pub endpoint_id: Todo,
+    pub endpoint_id: EndpointId,
 }
 
 /// advanced link
@@ -243,10 +251,10 @@ pub struct TlaTlReportInd {
 /// service user to request layer 2 to transmit a TL-SDU.
 #[derive(Debug)]
 pub struct TlaTlUnitdataReqBl {
-    pub address_type: Todo,
+    // pub address_type: Todo,
     pub main_address: TetraAddress,
-    pub link_id: Todo,
-    pub endpoint_id: Todo,
+    pub link_id: LinkId,
+    pub endpoint_id: EndpointId,
     pub tl_sdu: BitBuffer,
     pub scrambling_code: Todo,
     pub pdu_prio: Todo,
@@ -269,12 +277,12 @@ pub struct TlaTlUnitdataReqBl {
 /// the received TL-SDU to the layer 2 service user.
 #[derive(Debug)]
 pub struct TlaTlUnitdataIndBl {
-    pub address_type: Todo,
+    // pub address_type: Todo,
     pub main_address: TetraAddress,
-    pub link_id: Todo,
-    pub endpoint_id: Todo,
-    pub new_endpoint_id: Option<Todo>,
-    pub css_endpoint_id: Option<Todo>,
+    pub link_id: LinkId,
+    pub endpoint_id: EndpointId,
+    pub new_endpoint_id: Option<EndpointId>,
+    pub css_endpoint_id: Option<EndpointId>,
     pub tl_sdu: Option<BitBuffer>,
     pub scrambling_code: u32,
     pub fcs_flag: bool,
@@ -290,10 +298,10 @@ pub struct TlaTlUnitdataIndBl {
 /// completion of sending of the requested TL-SDU.
 #[derive(Debug)]
 pub struct TlUnitdataConfBl {
-    pub address_type: Todo,
+    // pub address_type: Todo,
     pub main_address: TetraAddress,
-    pub link_id: Todo,
-    pub endpoint_id: Todo,
+    pub link_id: LinkId,
+    pub endpoint_id: EndpointId,
     pub req_handle: Todo,
     pub report: Option<Todo>,
 } 

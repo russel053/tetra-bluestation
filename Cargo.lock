@@ -101,7 +101,7 @@ checksum = "812e12b5285cc515a9c72a5c1d3b6d46a19dac5acfef5265968c166106e31dd3"
 
 [[package]]
 name = "bluestation-bs"
-version = "0.3.1"
+version = "0.3.3"
 dependencies = [
  "clap",
  "tetra-config",
@@ -450,7 +450,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "pdu-tool"
-version = "0.3.1"
+version = "0.3.3"
 dependencies = [
  "clap",
  "tetra-config",
@@ -713,7 +713,7 @@ dependencies = [
 
 [[package]]
 name = "tetra-config"
-version = "0.3.1"
+version = "0.3.3"
 dependencies = [
  "serde",
  "tetra-core",
@@ -722,7 +722,7 @@ dependencies = [
 
 [[package]]
 name = "tetra-core"
-version = "0.3.1"
+version = "0.3.3"
 dependencies = [
  "serde",
  "tracing",
@@ -732,7 +732,7 @@ dependencies = [
 
 [[package]]
 name = "tetra-entities"
-version = "0.3.1"
+version = "0.3.3"
 dependencies = [
  "as-any",
  "crossbeam-channel",
@@ -750,7 +750,7 @@ dependencies = [
 
 [[package]]
 name = "tetra-pdus"
-version = "0.3.1"
+version = "0.3.3"
 dependencies = [
  "tetra-config",
  "tetra-core",
@@ -760,7 +760,7 @@ dependencies = [
 
 [[package]]
 name = "tetra-saps"
-version = "0.3.1"
+version = "0.3.3"
 dependencies = [
  "tetra-core",
  "tracing",

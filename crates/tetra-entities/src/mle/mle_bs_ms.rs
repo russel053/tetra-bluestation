@@ -1,6 +1,7 @@
 use tetra_config::SharedConfig;
 use tetra_core::tetra_entities::TetraEntity;
-use tetra_core::{BitBuffer, Sap, TetraAddress, unimplemented_log};
+use tetra_core::{BitBuffer, Sap, unimplemented_log};
+use crate::mle::components::mle_router::MleRouter;
 use crate::{MessageQueue, TetraEntityTrait};
 use tetra_saps::lcmc::LcmcMleUnitdataInd;
 use tetra_saps::lmm::LmmMleUnitdataInd;
@@ -18,13 +19,17 @@ pub struct Mle {
     // config: Option<SharedConfig>,
     self_component: TetraEntity,
     config: SharedConfig,
+
+    router: MleRouter,
 }
 
 impl Mle {
     pub fn new(config: SharedConfig) -> Self {
         Self { 
             self_component: TetraEntity::Mle,
-            config
+            config,
+
+            router: MleRouter::new(),
         }
     }
 
@@ -98,11 +103,11 @@ impl Mle {
         // Dispatch to appropriate component (or to self if for MLE)
         match pdu_type {
             MleProtocolDiscriminator::Mm => {
+                let handle = self.router.create_handle(prim.main_address, prim.link_id, prim.endpoint_id, message.dltime);
                 let m = LmmMleUnitdataInd{ 
                     sdu,
-                    handle: 0, // TODO FIXME
+                    handle,
                     received_address: prim.main_address,
-                    // received_address_type: 0, // TODO FIXME
                 };
                 let msg = SapMsg {
                     sap: Sap::LmmSap,
@@ -114,12 +119,13 @@ impl Mle {
                 queue.push_back(msg);
             }
             MleProtocolDiscriminator::Cmce => {
+                let handle = self.router.create_handle(prim.main_address, prim.link_id, prim.endpoint_id, message.dltime);
                 let m = LcmcMleUnitdataInd{ 
                     sdu,
-                    handle: 0, // TODO FIXME
+                    handle,
                     received_tetra_address: prim.main_address,
-                    endpoint_id: 0, // TODO FIXME
-                    link_id: 0, // TODO FIXME,
+                    endpoint_id: prim.endpoint_id,
+                    link_id: prim.link_id,
                     chan_change_resp_req: false, // TODO FIXME
                     chan_change_handle: None, // TODO FIXME
                 };
@@ -135,10 +141,9 @@ impl Mle {
             MleProtocolDiscriminator::Sndcp => {
                 let m = LtpdMleUnitdataInd{ 
                     sdu,
-                    endpoint_id: 0, // TODO FIXME
-                    link_id: 0, // TODO FIXME,
+                    endpoint_id: prim.endpoint_id,
+                    link_id: prim.link_id,
                     received_tetra_address: prim.main_address,
-                    // received_address_type: 0,
                     chan_change_resp_req: false, // TODO FIXME
                     chan_change_handle: None, // TODO FIXME
                 };
@@ -166,7 +171,9 @@ impl Mle {
         // TODO FIXME NOTE: This function is the same as the rx_tla_data_ind_bl. 
         // A cursory glance at the spec does not make clear the difference, except for the relation with
         // either udata or data at the llc. 
+        // It seems only the SNDCP uses unacknowledged TL-UNITDATA. 
         // We should investigate the exact differences and account for them
+        
         
         // Take ownership of bitbuf and read protocol discriminator
         let SapMsgInner::TlaTlUnitdataIndBl(prim) = &mut message.msg else { panic!() };
@@ -185,11 +192,12 @@ impl Mle {
         // Dispatch to appropriate component (or to self if for MLE)
         match pdu_type {
             MleProtocolDiscriminator::Mm => {
+                tracing::warn!("TM-UNITDATA for MM?"); // todo fixme find if ever used
+                let handle = self.router.create_handle(prim.main_address, prim.link_id, prim.endpoint_id, message.dltime);
                 let m = LmmMleUnitdataInd{ 
                     sdu,
-                    handle: 0, // TODO FIXME
+                    handle,
                     received_address: prim.main_address,
-                    // received_address_type: 0, // TODO FIXME
                 };
                 let msg = SapMsg {
                     sap: Sap::LmmSap,
@@ -201,13 +209,14 @@ impl Mle {
                 queue.push_back(msg);
             }
             MleProtocolDiscriminator::Cmce => {
+                tracing::warn!("TM-UNITDATA for MM?"); // todo fixme find if ever used
+                let handle = self.router.create_handle(prim.main_address, prim.link_id, prim.endpoint_id, message.dltime);
                 let m = LcmcMleUnitdataInd{ 
                     sdu,
-                    handle: 0, // TODO FIXME
-                    endpoint_id: 0, // TODO FIXME
-                    link_id: 0, // TODO FIXME,
-                    received_tetra_address: TetraAddress::issi(0), // TODO FIXME
-                    // received_address_type: 0,
+                    handle,
+                    endpoint_id: prim.endpoint_id,
+                    link_id: prim.link_id,
+                    received_tetra_address: prim.main_address,
                     chan_change_resp_req: false, // TODO FIXME
                     chan_change_handle: None, // TODO FIXME
                 };
@@ -223,10 +232,9 @@ impl Mle {
             MleProtocolDiscriminator::Sndcp => {
                 let m = LtpdMleUnitdataInd{ 
                     sdu,
-                    endpoint_id: 0, // TODO FIXME
-                    link_id: 0, // TODO FIXME,
+                    endpoint_id: prim.endpoint_id,
+                    link_id: prim.link_id,
                     received_tetra_address: prim.main_address,
-                    // received_address_type: 0,
                     chan_change_resp_req: false, // TODO FIXME
                     chan_change_handle: None, // TODO FIXME
                 };
@@ -400,6 +408,8 @@ impl Mle {
         pdu.copy_bits(&mut prim.sdu, sdu_len);
         pdu.seek(0);
 
+        let (addr, link, endpoint) = self.router.use_handle(prim.handle, message.dltime);
+        assert_eq!(addr.ssi, prim.address.ssi);
         let sapmsg = SapMsg {
             sap: Sap::TlaSap,
             src: self.self_component,
@@ -407,19 +417,19 @@ impl Mle {
             dltime: message.dltime,
             msg: SapMsgInner::TlaTlDataReqBl(TlaTlDataReqBl {
                 main_address: prim.address,
-                link_id: 0,
-                endpoint_id: 0, 
+                link_id: link,
+                endpoint_id: endpoint, 
                 tl_sdu: pdu,
-                // scrambling_code: self.config.config().scrambling_code(), // TODO cache
-                // pdu_prio: todo!(),
                 stealing_permission: false,
                 subscriber_class: 0, // TODO fixme
                 fcs_flag: false,
                 air_interface_encryption: None,
                 stealing_repeats_flag: None,
                 data_class_info: None,
-                req_handle: 0, // TODO FIXME
+                req_handle: 0, // TODO FIXME; should we pass the same handle here?
                 graceful_degradation: None,
+                chan_alloc: None,
+                // redundant_transmission: 1,
             }),
         };
         queue.push_back(sapmsg);
@@ -445,14 +455,57 @@ impl Mle {
         // }
     }
 
-    fn rx_lcmc_prim(&mut self, _queue: &mut MessageQueue, _message: SapMsg) {
+
+    fn rx_lcmc_mle_unitdata_req(&mut self, queue: &mut MessageQueue, mut message: SapMsg) {
+        tracing::trace!("rx_lcmc_mle_unitdata_req");
+        let SapMsgInner::LcmcMleUnitdataReq(prim) = &mut message.msg else {panic!()};
+
+        let mle_prot_discriminator = MleProtocolDiscriminator::Cmce;
+        let sdu_len = prim.sdu.get_len();
+        let mut pdu = BitBuffer::new(3 + sdu_len);
+        pdu.write_bits(mle_prot_discriminator.into_raw(), 3);
+        pdu.copy_bits(&mut prim.sdu, sdu_len);
+        pdu.seek(0);
+
+        let (_addr, link, endpoint) = self.router.use_handle(prim.handle, message.dltime);
+        assert_eq!(link, prim.link_id);
+        assert_eq!(endpoint, prim.endpoint_id);
+        // Take Channel Allocation Request if any
+        let chan_alloc = prim.chan_alloc.take();
+
+        let sapmsg = SapMsg {
+            sap: Sap::TlaSap,
+            src: self.self_component,
+            dest: TetraEntity::Llc,
+            dltime: message.dltime,
+            msg: SapMsgInner::TlaTlDataReqBl(TlaTlDataReqBl {
+                main_address: prim.main_address,
+                link_id: prim.link_id,
+                endpoint_id: prim.endpoint_id, 
+                tl_sdu: pdu,
+                stealing_permission: false,
+                subscriber_class: 0, // TODO fixme
+                fcs_flag: false,
+                air_interface_encryption: None,
+                stealing_repeats_flag: None,
+                data_class_info: None,
+                req_handle: 0, // TODO FIXME
+                graceful_degradation: None,
+                chan_alloc,
+                // redundant_transmission: prim.redundant_transmission
+            }),
+        };
+        queue.push_back(sapmsg);
+    }
+
+    fn rx_lcmc_prim(&mut self, queue: &mut MessageQueue, message: SapMsg) {
         tracing::trace!("rx_lcmc_prim");
-        unimplemented!("rx_lcmc_prim");
-        // match &message.msg {
-        //     _ => {
-        //         panic!();
-        //     }
-        // }
+        match &message.msg {
+            SapMsgInner::LcmcMleUnitdataReq(_) => {
+                self.rx_lcmc_mle_unitdata_req(queue, message);
+            }
+            _ => panic!()
+        }
     }
 }
 
@@ -466,6 +519,8 @@ impl TetraEntityTrait for Mle {
     fn rx_prim(&mut self, queue: &mut MessageQueue, message: SapMsg) {
         
         tracing::debug!("rx_prim: {:?}", message);
+        // tracing::debug!(ts=%message.dltime, "rx_prim: {:?}", message);
+
         match message.sap {
             Sap::TlaSap => {
                 self.rx_tla_prim(queue, message);

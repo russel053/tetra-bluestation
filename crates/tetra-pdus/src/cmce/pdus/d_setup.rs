@@ -2,7 +2,10 @@ use core::fmt;
 
 use tetra_core::{BitBuffer, expect_pdu_type, pdu_parse_error::PduParseErr};
 use tetra_core::typed_pdu_fields::*;
+use crate::cmce::enums::call_timeout::CallTimeout;
+use crate::cmce::enums::transmission_grant::TransmissionGrant;
 use crate::cmce::enums::{cmce_pdu_type_dl::CmcePduTypeDl, type3_elem_id::CmceType3ElemId};
+use crate::cmce::fields::basic_service_information::BasicServiceInformation;
 
 
 /// Representation of the D-SETUP PDU (Clause 14.7.1.12).
@@ -18,16 +21,17 @@ pub struct DSetup {
     /// Type1, 14 bits, Call identifier
     pub call_identifier: u16,
     /// Type1, 4 bits, Call time-out
-    pub call_time_out: u8,
+    pub call_time_out: CallTimeout,
     /// Type1, 1 bits, Hook method selection
     pub hook_method_selection: bool,
     /// Type1, 1 bits, Simplex/duplex selection
     pub simplex_duplex_selection: bool,
     /// Type1, 8 bits, Basic service information
-    pub basic_service_information: u8,
+    pub basic_service_information: BasicServiceInformation,
     /// Type1, 2 bits, Transmission grant
-    pub transmission_grant: u8,
+    pub transmission_grant: TransmissionGrant,
     /// Type1, 1 bits, Transmission request permission
+    /// Set to true to signal MSes they are allowed to send a U-TX DEMAND
     pub transmission_request_permission: bool,
     /// Type1, 4 bits, See note 1,
     pub call_priority: u8,
@@ -36,11 +40,11 @@ pub struct DSetup {
     /// Type2, 24 bits, Temporary address
     pub temporary_address: Option<u64>,
     /// Type2, 2 bits, See note 2,
-    pub calling_party_type_identifier: Option<u64>,
+    // pub calling_party_type_identifier: Option<u64>,
     /// Conditional 24 bits, See note 3, condition: calling_party_type_identifier == Some(1) || calling_party_type_identifier == Some(2)
-    pub calling_party_address_ssi: Option<u64>,
+    pub calling_party_address_ssi: Option<u32>,
     /// Conditional 24 bits, See note 3, condition: calling_party_type_identifier == Some(2)
-    pub calling_party_extension: Option<u64>,
+    pub calling_party_extension: Option<u32>,
     /// Type3, External subscriber number
     pub external_subscriber_number: Option<Type3FieldGeneric>,
     /// Type3, Facility
@@ -62,15 +66,18 @@ impl DSetup {
         // Type1
         let call_identifier = buffer.read_field(14, "call_identifier")? as u16;
         // Type1
-        let call_time_out = buffer.read_field(4, "call_time_out")? as u8;
+        let val = buffer.read_field(4, "call_time_out")?;
+        let call_time_out = CallTimeout::try_from(val).unwrap(); // Never fails
+
         // Type1
         let hook_method_selection = buffer.read_field(1, "hook_method_selection")? != 0;
         // Type1
         let simplex_duplex_selection = buffer.read_field(1, "simplex_duplex_selection")? != 0;
         // Type1
-        let basic_service_information = buffer.read_field(8, "basic_service_information")? as u8;
+        let basic_service_information = BasicServiceInformation::from_bitbuf(buffer)?;
         // Type1
-        let transmission_grant = buffer.read_field(2, "transmission_grant")? as u8;
+        let val = buffer.read_field(2, "transmission_grant")?;
+        let transmission_grant = TransmissionGrant::try_from(val).unwrap(); // Never fails
         // Type1
         let transmission_request_permission = buffer.read_field(1, "transmission_request_permission")? != 0;
         // Type1
@@ -87,13 +94,12 @@ impl DSetup {
         let calling_party_type_identifier = typed::parse_type2_generic(obit, buffer, 2, "calling_party_type_identifier")?;
         // Conditional
         let calling_party_address_ssi = if obit && calling_party_type_identifier == Some(1) || calling_party_type_identifier == Some(2) { 
-            Some(buffer.read_field(24, "calling_party_address_ssi")?) 
+            Some(buffer.read_field(24, "calling_party_address_ssi")? as u32) 
         } else { None };
         // Conditional
         let calling_party_extension = if obit && calling_party_type_identifier == Some(2) { 
-            Some(buffer.read_field(24, "calling_party_extension")?) 
+            Some(buffer.read_field(24, "calling_party_extension")? as u32) 
         } else { None };
-
 
         // Type3
         let external_subscriber_number = typed::parse_type3_generic(obit, buffer, CmceType3ElemId::ExtSubscriberNum)?;
@@ -125,7 +131,7 @@ impl DSetup {
             call_priority, 
             notification_indicator, 
             temporary_address, 
-            calling_party_type_identifier, 
+            // calling_party_type_identifier, 
             calling_party_address_ssi, 
             calling_party_extension, 
             external_subscriber_number, 
@@ -148,7 +154,7 @@ impl DSetup {
         // Type1
         buffer.write_bits(self.simplex_duplex_selection as u64, 1);
         // Type1
-        buffer.write_bits(self.basic_service_information as u64, 8);
+        self.basic_service_information.to_bitbuf(buffer)?;
         // Type1
         buffer.write_bits(self.transmission_grant as u64, 2);
         // Type1
@@ -157,7 +163,15 @@ impl DSetup {
         buffer.write_bits(self.call_priority as u64, 4);
 
         // Check if any optional field present and place o-bit
-        let obit = self.notification_indicator.is_some() || self.temporary_address.is_some() || self.calling_party_type_identifier.is_some() || self.external_subscriber_number.is_some() || self.facility.is_some() || self.dm_ms_address.is_some() || self.proprietary.is_some() ;
+        let obit = 
+            self.notification_indicator.is_some() || 
+            self.temporary_address.is_some() || 
+            self.calling_party_address_ssi.is_some() ||
+            self.calling_party_extension.is_some() ||
+            self.external_subscriber_number.is_some() || 
+            self.facility.is_some() || 
+            self.dm_ms_address.is_some() || 
+            self.proprietary.is_some();
         delimiters::write_obit(buffer, obit as u8);
         if !obit { return Ok(()); }
 
@@ -168,15 +182,21 @@ impl DSetup {
         typed::write_type2_generic(obit, buffer, self.temporary_address, 24);
 
         // Type2
-        typed::write_type2_generic(obit, buffer, self.calling_party_type_identifier, 2);
+        let calling_party_type_identifier = match (self.calling_party_address_ssi, self.calling_party_extension) {
+            (None, None) => None,
+            (Some(_), None) => Some(1),
+            (Some(_), Some(_)) => Some(2),
+            _ => return Err(PduParseErr::InvalidValue { field: "calling_party_type_identifier", value: 0 }),
+        };
+        typed::write_type2_generic(obit, buffer, calling_party_type_identifier, 2);
 
         // Conditional
         if let Some(ref value) = self.calling_party_address_ssi {
-            buffer.write_bits(*value, 24);
+            buffer.write_bits(*value as u64, 24);
         }
         // Conditional
         if let Some(ref value) = self.calling_party_extension {
-            buffer.write_bits(*value, 24);
+            buffer.write_bits(*value as u64, 24);
         }
         // Type3
         typed::write_type3_generic(obit, buffer, &self.external_subscriber_number, CmceType3ElemId::ExtSubscriberNum)?;
@@ -197,7 +217,7 @@ impl DSetup {
 
 impl fmt::Display for DSetup {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "DSetup {{ call_identifier: {:?} call_time_out: {:?} hook_method_selection: {:?} simplex_duplex_selection: {:?} basic_service_information: {:?} transmission_grant: {:?} transmission_request_permission: {:?} call_priority: {:?} notification_indicator: {:?} temporary_address: {:?} calling_party_type_identifier: {:?} calling_party_address_ssi: {:?} calling_party_extension: {:?} external_subscriber_number: {:?} facility: {:?} dm_ms_address: {:?} proprietary: {:?} }}",
+        write!(f, "DSetup {{ call_identifier: {:?} call_time_out: {:?} hook_method_selection: {:?} simplex_duplex_selection: {:?} basic_service_information: {:?} transmission_grant: {:?} transmission_request_permission: {:?} call_priority: {:?} notification_indicator: {:?} temporary_address: {:?} calling_party_address_ssi: {:?} calling_party_extension: {:?} external_subscriber_number: {:?} facility: {:?} dm_ms_address: {:?} proprietary: {:?} }}",
             self.call_identifier,
             self.call_time_out,
             self.hook_method_selection,
@@ -208,7 +228,6 @@ impl fmt::Display for DSetup {
             self.call_priority,
             self.notification_indicator,
             self.temporary_address,
-            self.calling_party_type_identifier,
             self.calling_party_address_ssi,
             self.calling_party_extension,
             self.external_subscriber_number,
@@ -218,3 +237,85 @@ impl fmt::Display for DSetup {
         )
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+
+    use tetra_core::debug;
+    use tetra_saps::control::enums::{circuit_mode_type::CircuitModeType, communication_type::CommunicationType};
+
+    use super::*;
+
+    #[test]
+    fn test_d_setup_lab() {
+
+        debug::setup_logging_verbose();
+        let mut buffer = BitBuffer::from_bitstr("00111000000000001000111000000010011000001001010000110111100010101100010");
+        let pdu = DSetup::from_bitbuf(&mut buffer).unwrap();
+        println!("Parsed DSetup: {:?}", pdu);
+        assert!(buffer.get_len_remaining() == 0);
+       
+        assert_eq!(pdu.call_identifier, 4);
+        assert_eq!(pdu.call_time_out, CallTimeout::T5m);
+        assert_eq!(pdu.hook_method_selection, false);
+        assert_eq!(pdu.simplex_duplex_selection, false);
+
+        assert_eq!(pdu.basic_service_information.circuit_mode_type, CircuitModeType::TchS);
+        assert_eq!(pdu.basic_service_information.encryption_flag, false);
+        assert_eq!(pdu.basic_service_information.communication_type, CommunicationType::P2Mp);
+        assert_eq!(pdu.basic_service_information.slots_per_frame, None);
+        assert_eq!(pdu.basic_service_information.speech_service, Some(0));
+        
+        assert_eq!(pdu.transmission_grant, TransmissionGrant::GrantedToOtherUser);
+        assert_eq!(pdu.transmission_request_permission, false);
+        assert_eq!(pdu.call_priority, 0);
+        assert!(pdu.notification_indicator.is_none());
+        assert!(pdu.temporary_address.is_none());
+        assert_eq!(pdu.calling_party_address_ssi.unwrap(), 910001);
+        assert!(pdu.calling_party_extension.is_none());
+        assert!(pdu.external_subscriber_number.is_none());
+        assert!(pdu.facility.is_none());
+        assert!(pdu.dm_ms_address.is_none());
+        assert!(pdu.proprietary.is_none());
+
+        let mut new = BitBuffer::new_autoexpand(71);
+        pdu.to_bitbuf(&mut new).unwrap();
+        assert_eq!(new.to_bitstr(), buffer.to_bitstr());
+    }
+
+    #[test]
+    fn test_d_setup() {
+        debug::setup_logging_verbose();
+        let mut buffer = BitBuffer::from_bitstr("00111000000110000110000000000010011000001001010001111100100110001010000");
+        let pdu = DSetup::from_bitbuf(&mut buffer).unwrap();
+        println!("Parsed DSetup: {:?}", pdu);
+        assert!(buffer.get_len_remaining() == 0);
+        
+        assert_eq!(pdu.call_identifier, 195);
+        assert_eq!(pdu.call_time_out, CallTimeout::Infinite);
+        assert_eq!(pdu.hook_method_selection, false);
+        assert_eq!(pdu.simplex_duplex_selection, false);
+        assert_eq!(pdu.basic_service_information.circuit_mode_type, CircuitModeType::TchS);
+        assert_eq!(pdu.basic_service_information.encryption_flag, false);
+        assert_eq!(pdu.basic_service_information.communication_type, CommunicationType::P2Mp);
+        assert_eq!(pdu.basic_service_information.slots_per_frame, None);
+        assert_eq!(pdu.basic_service_information.speech_service, Some(0));
+        assert_eq!(pdu.transmission_grant, TransmissionGrant::GrantedToOtherUser);
+        assert_eq!(pdu.transmission_request_permission, false);
+        assert_eq!(pdu.call_priority, 0);
+        assert!(pdu.notification_indicator.is_none());
+        assert!(pdu.temporary_address.is_none());
+        assert_eq!(pdu.calling_party_address_ssi.unwrap(), 2041384);
+        assert!(pdu.calling_party_extension.is_none());
+        assert!(pdu.external_subscriber_number.is_none());
+        assert!(pdu.facility.is_none());
+        assert!(pdu.dm_ms_address.is_none());
+        assert!(pdu.proprietary.is_none());
+
+        let mut new = BitBuffer::new_autoexpand(71);
+        pdu.to_bitbuf(&mut new).unwrap();
+        assert_eq!(new.to_bitstr(), buffer.to_bitstr());
+    }    
+}
+

@@ -1,18 +1,18 @@
 use tetra_core::unimplemented_log;
-use crate::MessageQueue;
+use tetra_pdus::cmce::{enums::cmce_pdu_type_dl::CmcePduTypeDl, pdus::d_sds_data::DSdsData};
 use tetra_saps::{SapMsg, SapMsgInner};
 
-use tetra_pdus::cmce::{enums::cmce_pdu_type_dl::CmcePduTypeDl, pdus::d_sds_data::DSdsData};
+use crate::MessageQueue;
 
 /// Clause 13 Short Data Service CMCE sub-entity
-pub struct SdsSubentity{
+pub struct SdsMsSubentity{
 
 }
 
-impl SdsSubentity {
+impl SdsMsSubentity {
     /// Create a new instance of the SdsSubentity
     pub fn new() -> Self {
-        SdsSubentity {}
+        SdsMsSubentity {}
     }
 
     pub fn rx_sds_data(&mut self, _queue: &mut MessageQueue, mut message: SapMsg) {
@@ -30,7 +30,7 @@ impl SdsSubentity {
             }
         };
         
-        unimplemented_log!("rx_sds_data");
+        unimplemented_log!("rx_sds_data not implemented");
     }
 
     /// Poor man's rx_prim, as this is a subcomponent and not governed by the MessageRouter

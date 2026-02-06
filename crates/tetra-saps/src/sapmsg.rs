@@ -4,6 +4,10 @@ use tetra_core::Sap;
 use tetra_core::TdmaTime;
 use tetra_core::tetra_entities::TetraEntity;
 
+use crate::control::call_control::CallControl;
+use crate::tmd::TmdCircuitDataInd;
+use crate::tmd::TmdCircuitDataReq;
+
 use super::lcmc::*;
 use super::lmm::*;
 use super::ltpd::*;
@@ -38,6 +42,7 @@ pub enum SapMsgInner {
     // TMA-SAP
     TmaUnitdataInd(TmaUnitdataInd),
     TmaUnitdataReq(TmaUnitdataReq),
+    TmaReportInd(TmaReportInd),
 
     // TMB-SAP / TLB-SAP (merged to TLMB-SAP)
     TlmbSyncInd(TlmbSyncInd),
@@ -45,11 +50,11 @@ pub enum SapMsgInner {
 
     // TMC-SAP
     TlmcConfigureReq(TlmcConfigureReq),
+
     // TMD-SAP (Uplane traffic and signalling)
+    TmdCircuitDataReq(TmdCircuitDataReq),
+    TmdCircuitDataInd(TmdCircuitDataInd),
 
-
-
-    
     // TLB-SAP 
     // TlmbSyncInd(TlmbSyncInd),
     // TlmbSysinfoInd(TlmbSysinfoInd),
@@ -68,6 +73,9 @@ pub enum SapMsgInner {
     // LCMC-SAP (MLE-CMCE)
     LcmcMleUnitdataInd(LcmcMleUnitdataInd),
     LcmcMleUnitdataReq(LcmcMleUnitdataReq),
+    
+    // CMCE -> UMAC control
+    CmceCallControl(CallControl),
 
     // LTPD-SAP (MLE-LTPD)
     LtpdMleUnitdataInd(LtpdMleUnitdataInd)

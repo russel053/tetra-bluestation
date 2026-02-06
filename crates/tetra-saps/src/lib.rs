@@ -1,7 +1,8 @@
-//! SAP (Service Access Point) message types for TETRA
-//!
-//! This crate provides all SAP primitive types used for inter-layer communication
-//! in the TETRA protocol stack.
+#![allow(dead_code)]
+
+/// Custom definitions for stack control
+pub mod control;
+pub mod tmd;
 
 pub mod lcmc;
 pub mod lmm;

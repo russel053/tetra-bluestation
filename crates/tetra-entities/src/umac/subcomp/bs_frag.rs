@@ -157,8 +157,6 @@ impl BsFragger {
             
             // Not worth (or possible) to place a fragment here. Rather wait for a new slot 
             // We do nothing and simply return that more work is needed
-            // tracing::error!("DELME {}", mac_block.dump_bin());
-            // tracing::error!("DELME {}", self.sdu.dump_bin());
             tracing::debug!("-> does_not_fit, trying again next frame");
             false
             

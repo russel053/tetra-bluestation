@@ -22,7 +22,9 @@ impl TetraEntityTrait for Sndcp {
     }
 
     fn rx_prim(&mut self, _queue: &mut MessageQueue, message: SapMsg) {
+        
         tracing::debug!("rx_prim: {:?}", message);
+        // tracing::debug!(ts=%message.dltime, "rx_prim: {:?}", message);
 
         // There is only one SAP for SNDCP
         // OR.. SN-SAP? TODO FIXME check docs

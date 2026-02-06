@@ -106,3 +106,30 @@ impl fmt::Display for DRelease {
         )
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tetra_core::debug;
+
+    #[test]
+    fn test_parse_d_release() {
+
+        debug::setup_logging_verbose();
+        let bitstr = "0011000000011011001011010";
+        let mut buffer = BitBuffer::from_bitstr(bitstr);
+        let result = DRelease::from_bitbuf(&mut buffer).unwrap();
+
+        tracing::info!("Parsed DRelease: {:?}", result);
+        tracing::info!("buf:        {}", buffer.dump_bin());
+        assert_eq!(result.call_identifier, 217);
+        assert_eq!(result.disconnect_cause, 13);
+
+        let mut buffer_out = BitBuffer::new_autoexpand(30);
+        let _ = result.to_bitbuf(&mut buffer_out);
+        tracing::info!("Serialized: {}", buffer_out.dump_bin());
+        assert_eq!(bitstr, buffer_out.to_bitstr());
+        assert!(buffer.get_len_remaining() == 0);
+    }
+}

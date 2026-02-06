@@ -1,8 +1,14 @@
+use tetra_core::{BitBuffer, EndpointId, LinkId, MleHandle, TetraAddress, Todo};
+
+use crate::{control::enums::circuit_mode_type::CircuitModeType, lcmc::{fields::chan_alloc_req::CmceChanAllocReq}};
+
+pub mod enums;
+pub mod fields;
+
+/// Call ID as allocated by CMCE
+pub type CallId = u16;
+
 // Clause 17.3.3 Service state diagram for the LCMC-SAP (MLE-CMCE)
-
-#![allow(unused)]
-use tetra_core::{BitBuffer, TetraAddress, Todo};
-
 
 /// MLE-ACTIVITY request: this primitive shall be used by the CMCE to inform the MLE of the state of any circuit
 /// mode call(s).
@@ -39,30 +45,40 @@ pub struct LcmcMleCloseInd {}
 
 /// MLE-CONFIGURE request: this primitive shall be used to pass inter layer management information relating to
 /// circuit mode calls, e.g. whether Tx grant has been given, type of traffic, etc.
+/// Contents not fully standardized. 
 #[derive(Debug)]
 pub struct LcmcMleConfigureReq {
-    pub endpoint_id: Todo,
-    pub chan_change_accepted: bool,
+    pub endpoint_id: EndpointId,
+    pub chan_change_accepted: Option<bool>,
     pub chan_change_handle: Todo,
-    pub call_release: Todo,
+    pub call_release: Option<Todo>,
     pub encryption_flag: bool,
-    pub circuit_mode_type: Todo,
+    pub circuit_mode_type: CircuitModeType,
+    pub add_temp_gssi: Option<Todo>,
+    pub del_temp_gssi: Option<Todo>,   
+
+    // These three fields are related. Only four valid combos (14.5.1.4.0):
+    /// switch_u_plane      tx_grant    simplex_duplex
+    /// 1                   1           simplex         MS is authorized to transmit traffic
+    /// 1                   0           simplex         MS is authorized to receive traffic
+    /// 0                   1           duplex          MS is authorized to transmit and receive traffic.
+    /// 0                   _           _               withdraws previous authorization to transmit and/or receive traffic 
     pub simplex_duplex: bool,
-    pub add_temp_gssi: Todo,
-    pub del_temp_gssi: Todo,
-    pub tx_grant: Todo,
-    pub switch_u_plane: Todo,
+    /// Whether lower mac is allowed to transmit. See also tx_grant, simplex_duplex, switch_u_plane
+    pub tx_grant: bool,
+    /// True to switch lower layers to U-plane operation mode
+    pub switch_u_plane: bool,
 }
 
 /// MLE-CONFIGURE indication: this primitive shall be used to pass inter layer management information relating to
 /// circuit mode calls and packet data conflicts.
 #[derive(Debug)]
 pub struct LcmcMleConfigureInd {
-    pub endpoint_id: Todo,
+    pub endpoint_id: EndpointId,
     pub chan_change_responce_required: bool,
     pub chan_change_handle: Todo,
     pub reason_for_config_indication: Todo,
-    pub conflicting_endpoint_id: Todo,
+    pub conflicting_endpoint_id: EndpointId,
 }
 
 /// MLE-DISABLE indication: this primitive shall be used by the MLE entity to instruct the CMCE entity to enter the
@@ -157,9 +173,9 @@ pub struct LcmcMleResumeInd {
 #[derive(Debug)]
 pub struct LcmcMleUnitdataReq {
     pub sdu: BitBuffer,
-    pub handle: Todo,
-    pub endpoint_id: Todo,
-    pub link_id: Todo,
+    pub handle: MleHandle,
+    pub endpoint_id: EndpointId,
+    pub link_id: LinkId,
     pub layer2service: Todo,
     pub pdu_prio: Todo,
     pub layer2_qos: Todo,
@@ -167,19 +183,26 @@ pub struct LcmcMleUnitdataReq {
     pub stealing_repeats_flag: bool,
     /// We use this to indicate it may be retransmitted
     /// This may differ from what ETSI envisioned
-    pub eligible_for_graceful_degradation: bool,
+    // pub eligible_for_graceful_degradation: bool,
+    
+
+    /// Custom field to allow for creating circuits
+    pub main_address: TetraAddress,
+    pub chan_alloc: Option<CmceChanAllocReq>,
+    // Transmit 4 times (if capacity allows)
+    // pub redundant_transmission: u8,
 }
+
 
 /// MLE-UNITDATA indication: this primitive shall be used by the MLE to pass to the CMCE entity data which has
 /// been received from a peer entity on the TETRA infrastructure side.
 #[derive(Debug)]
 pub struct LcmcMleUnitdataInd {
     pub sdu: BitBuffer,
-    pub handle: Todo,
-    pub endpoint_id: Todo,
-    pub link_id: Todo,
+    pub handle: MleHandle,
+    pub endpoint_id: EndpointId,
+    pub link_id: LinkId,
     pub received_tetra_address: TetraAddress, // ITSI/GTSI
-    // pub received_address_type: Todo,
     pub chan_change_resp_req: bool,
     pub chan_change_handle: Option<Todo>,
 }

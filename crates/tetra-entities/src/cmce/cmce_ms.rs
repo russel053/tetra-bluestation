@@ -6,25 +6,25 @@ use tetra_saps::{SapMsg, SapMsgInner};
 
 use tetra_pdus::cmce::enums::cmce_pdu_type_dl::CmcePduTypeDl;
 
-use super::subentities::cc::CcSubentity;
-use super::subentities::sds::SdsSubentity;
-use super::subentities::ss::SsSubentity;
+use super::subentities::cc_ms::CcMsSubentity;
+use super::subentities::sds_ms::SdsMsSubentity;
+use super::subentities::ss_ms::SsMsSubentity;
 
 pub struct CmceMs {
     config: SharedConfig,
     
-    sds: SdsSubentity,
-    cc: CcSubentity,
-    ss: SsSubentity,
+    sds: SdsMsSubentity,
+    cc: CcMsSubentity,
+    ss: SsMsSubentity,
 }
 
 impl CmceMs {
     pub fn new(config: SharedConfig) -> Self {
         Self { 
             config,
-            sds: SdsSubentity::new(),
-            cc: CcSubentity::new(),
-            ss: SsSubentity::new(),
+            sds: SdsMsSubentity::new(),
+            cc: CcMsSubentity::new(),
+            ss: SsMsSubentity::new(),
          }
     }
 
@@ -86,6 +86,7 @@ impl TetraEntityTrait for CmceMs {
     fn rx_prim(&mut self, queue: &mut MessageQueue, message: SapMsg) {
         
         tracing::debug!("rx_prim: {:?}", message);
+        // tracing::debug!(ts=%message.dltime, "rx_prim: {:?}", message);
         
         // There is only one SAP for CMCE
         assert!(message.sap == Sap::LcmcSap);

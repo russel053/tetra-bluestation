@@ -6,6 +6,7 @@ use tetra_pdus::mm::{enums::mm_pdu_type_ul::MmPduTypeUl, pdus::mm_pdu_function_n
 
 
 pub fn make_ul_mm_pdu_function_not_supported(
+    handle: u32,
     pdu_type: MmPduTypeUl,
     pdu_subtype: Option<(usize, u64)>,
     issi: u32,
@@ -37,7 +38,7 @@ pub fn make_ul_mm_pdu_function_not_supported(
         dltime: dl_time,
         msg: SapMsgInner::LmmMleUnitdataReq(LmmMleUnitdataReq{
             sdu,
-            handle: 0,
+            handle: handle,
             address: addr,
             layer2service: 0,
             stealing_permission: false,

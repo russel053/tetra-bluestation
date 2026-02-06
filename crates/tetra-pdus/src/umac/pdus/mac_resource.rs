@@ -317,8 +317,8 @@ impl MacResource {
             ret += 8 
         };
         ret += 1;
-        if self.chan_alloc_element.is_some() { 
-            unimplemented!() 
+        if let Some(chan_alloc) = self.chan_alloc_element.as_ref() { 
+            ret += chan_alloc.compute_len();
         };
 
         ret
@@ -370,5 +370,31 @@ impl fmt::Display for MacResource {
             write!(f, "  chan_alloc_element: {:?}", v)?;
         }
         write!(f, " }}")
+    }
+}
+
+
+
+#[cfg(test)]
+mod tests {
+
+    use tetra_core::debug;
+
+    use super::*;
+
+    #[test]
+    fn test_mac_resource_with_chanalloc() {
+        debug::setup_logging_verbose();
+
+        let mut buffer = BitBuffer::from_bitstr("00000000100111100000000000000000110011001111100010100101100010111111000011");
+        let pdu = MacResource::from_bitbuf(&mut buffer).unwrap();
+        println!("Parsed MacResource: {:?}", pdu);
+
+        assert!(buffer.get_len_remaining() == 0);
+        assert_eq!(pdu.chan_alloc_element.as_ref().unwrap().carrier_num, 1528);
+
+        let mut new = BitBuffer::new_autoexpand(buffer.get_len());
+        pdu.to_bitbuf(&mut new);
+        assert_eq!(new.to_bitstr(), buffer.to_bitstr());
     }
 }

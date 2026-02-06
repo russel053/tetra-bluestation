@@ -48,7 +48,7 @@ fn run_stack(_config: &mut SharedConfig, router: &mut MessageRouter, num_ticks: 
     
     let mut ticks: u64 = 0;
     loop {
-        router.tick_all();
+        router.tick_start();
         router.deliver_all_messages();
         ticks += 1;
         if let Some(num_ticks) = num_ticks {

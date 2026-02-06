@@ -1,19 +1,19 @@
 use tetra_core::unimplemented_log;
-use crate::MessageQueue;
+use tetra_pdus::cmce::enums::cmce_pdu_type_dl::CmcePduTypeDl;
 use tetra_saps::{SapMsg, SapMsgInner};
 
-use tetra_pdus::cmce::enums::cmce_pdu_type_dl::CmcePduTypeDl;
+use crate::MessageQueue;
 
 
 /// Clause 11 Call Control CMCE sub-entity
-pub struct CcSubentity{
+pub struct CcMsSubentity{
 
 }
 
-impl CcSubentity {
+impl CcMsSubentity {
     
     pub fn new() -> Self {
-        CcSubentity {}
+        CcMsSubentity {}
     }
 
     pub fn route_rd_deliver(&mut self, _queue: &mut MessageQueue, mut message: SapMsg) {

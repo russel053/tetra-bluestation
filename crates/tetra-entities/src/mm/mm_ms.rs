@@ -75,6 +75,7 @@ impl TetraEntityTrait for MmMs {
     fn rx_prim(&mut self, queue: &mut MessageQueue, message: SapMsg) {
         
         tracing::debug!("rx_prim: {:?}", message);
+        // tracing::debug!(ts=%message.dltime, "rx_prim: {:?}", message);
 
         // There is only one SAP for MM
         assert!(message.sap == Sap::LmmSap);

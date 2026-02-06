@@ -1,31 +1,31 @@
 
 use tetra_config::SharedConfig;
 use tetra_core::tetra_entities::TetraEntity;
-use tetra_core::{Sap, unimplemented_log};
+use tetra_core::{Sap, TdmaTime, unimplemented_log};
 use crate::{MessageQueue, TetraEntityTrait};
 use tetra_saps::{SapMsg, SapMsgInner};
 
 use tetra_pdus::cmce::enums::cmce_pdu_type_ul::CmcePduTypeUl;
 
-use super::subentities::cc::CcSubentity;
-use super::subentities::sds::SdsSubentity;
-use super::subentities::ss::SsSubentity;
+use super::subentities::cc_bs::CcBsSubentity;
+use super::subentities::sds_bs::SdsBsSubentity;
+use super::subentities::ss_bs::SsBsSubentity;
 
 pub struct CmceBs {
     config: SharedConfig,
-    
-    sds: SdsSubentity,
-    cc: CcSubentity,
-    ss: SsSubentity,
+
+    cc: CcBsSubentity,
+    sds: SdsBsSubentity,
+    ss: SsBsSubentity,
 }
 
 impl CmceBs {
     pub fn new(config: SharedConfig) -> Self {
         Self { 
             config,
-            sds: SdsSubentity::new(),
-            cc: CcSubentity::new(),
-            ss: SsSubentity::new(),
+            sds: SdsBsSubentity::new(),
+            cc: CcBsSubentity::new(),
+            ss: SsBsSubentity::new(),
          }
     }
 
@@ -44,32 +44,29 @@ impl CmceBs {
         };
 
         match pdu_type {
-            CmcePduTypeUl::UAlert => 
-                unimplemented_log!("UAlert"),
-            CmcePduTypeUl::UConnect => 
-                unimplemented_log!("UConnect"),
-            CmcePduTypeUl::UDisconnect => 
-                unimplemented_log!("UDisconnect"),
-            CmcePduTypeUl::UInfo => 
-                unimplemented_log!("UInfo"),
-            CmcePduTypeUl::URelease => 
-                unimplemented_log!("URelease"),
-            CmcePduTypeUl::USetup => 
-                unimplemented_log!("USetup"),
-            CmcePduTypeUl::UStatus => 
-                unimplemented_log!("UStatus"),
-            CmcePduTypeUl::UTxCeased => 
-                unimplemented_log!("UTxCeased"),
-            CmcePduTypeUl::UTxDemand => 
-                unimplemented_log!("UTxDemand"),
-            CmcePduTypeUl::UCallRestore => 
-                unimplemented_log!("UCallRestore"),
-            CmcePduTypeUl::USdsData => 
-                unimplemented_log!("USdsData"),
-            CmcePduTypeUl::UFacility => 
-                unimplemented_log!("UFacility"),
-            CmcePduTypeUl::CmceFunctionNotSupported => 
-                unimplemented_log!("CmceFunctionNotSupported"),
+            CmcePduTypeUl::UAlert |
+            CmcePduTypeUl::UConnect |
+            CmcePduTypeUl::UDisconnect |
+            CmcePduTypeUl::UInfo |
+            CmcePduTypeUl::URelease |
+            CmcePduTypeUl::USetup |
+            CmcePduTypeUl::UStatus |
+            CmcePduTypeUl::UTxCeased |
+            CmcePduTypeUl::UTxDemand |
+            CmcePduTypeUl::UCallRestore => {
+                self.cc.route_xx_deliver(_queue, message);
+            },
+            CmcePduTypeUl::USdsData => {
+                unimplemented_log!("{:?}", pdu_type);
+                // self.sds.route_xx_deliver(_queue, message);
+            },
+            CmcePduTypeUl::UFacility => {
+                unimplemented_log!("{:?}", pdu_type);
+                // self.ss.route_xx_deliver(_queue, message);
+            },
+            CmcePduTypeUl::CmceFunctionNotSupported => {
+                unimplemented_log!("{:?}", pdu_type);
+            }
         };
     }
 }
@@ -84,9 +81,21 @@ impl TetraEntityTrait for CmceBs {
         self.config = config;
     }
 
+    fn tick_start(&mut self, queue: &mut MessageQueue, ts: TdmaTime) { 
+        // Testing code
+        // if ts == TdmaTime::default().add_timeslots(10*18*4+2) {
+        //     // Inject a call start
+        //     self.cc.run_call_test(queue, ts);
+        // }
+
+        // Propagate tick to subentities
+        self.cc.tick_start(queue, ts);
+    }
+
     fn rx_prim(&mut self, queue: &mut MessageQueue, message: SapMsg) {
         
         tracing::debug!("rx_prim: {:?}", message);
+        // tracing::debug!(ts=%message.dltime, "rx_prim: {:?}", message);
         
         // There is only one SAP for CMCE
         assert!(message.sap == Sap::LcmcSap);

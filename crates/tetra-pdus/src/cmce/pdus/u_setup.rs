@@ -3,6 +3,7 @@ use core::fmt;
 use tetra_core::{BitBuffer, expect_pdu_type, pdu_parse_error::PduParseErr};
 use tetra_core::typed_pdu_fields::*;
 use crate::cmce::enums::{cmce_pdu_type_ul::CmcePduTypeUl, type3_elem_id::CmceType3ElemId};
+use crate::cmce::fields::basic_service_information::BasicServiceInformation;
 
 /// Representation of the U-SETUP PDU (Clause 14.7.2.10).
 /// This PDU shall be the request for a call set-up from a MS.
@@ -15,21 +16,33 @@ use crate::cmce::enums::{cmce_pdu_type_ul::CmcePduTypeUl, type3_elem_id::CmceTyp
 // note 4: Shall be conditional on the value of Called Party Type Identifier (CPTI): CPTI = 0 → Called Party SNA (refer to ETS 300 392-12-7 [13]); CPTI = 1 → Called Party SSI; CPTI = 2 → Called Party SSI + Called Party Extension.
 #[derive(Debug)]
 pub struct USetup {
-    /// Type1, 4 bits, See note 1,
+    /// Type1, 4 bits, See note 1. ETSI EN 300 392-12-8 Clause 5.2.2.3
+    /// 0 = SS-AS not defined, 1-14 = SS-AS with selected area N, 15 = (usually) all areas
     pub area_selection: u8,
     /// Type1, 1 bits, Hook method selection
+    /// 0 = No hook signalling (direct through-connect)
+    /// 1 = Hook on/Hook off signalling
     pub hook_method_selection: bool,
     /// Type1, 1 bits, Simplex/duplex selection
+    /// 0 = Simplex
+    /// 1 = Duplex
     pub simplex_duplex_selection: bool,
     /// Type1, 8 bits, Basic service information
-    pub basic_service_information: u8,
+    pub basic_service_information: BasicServiceInformation,
     /// Type1, 1 bits, Request to transmit/send data
+    /// The SwMI normally gives the first permission to transmit to the calling MS when a new call has been set-up. However,
+    /// the calling user application may allow the called users to request permission to transmit first. The calling CC shall in
+    /// that case set the "request to transmit" bit accordingly in the U-SETUP PDU.
     pub request_to_transmit_send_data: bool,
     /// Type1, 4 bits, See note 2,
     pub call_priority: u8,
     /// Type1, 2 bits, See note 3,
     pub clir_control: u8,
     /// Type1, 2 bits, Short/SSI/TSI,
+    /// 0 = Short Number Address (SNA)
+    /// 1 = Short Subscriber Identity (SSI)
+    /// 2 = TETRA Subscriber Identity (TSI)
+    /// 3 = Reserved
     pub called_party_type_identifier: u8,
     /// Conditional 8 bits, See note 4, condition: called_party_type_identifier == 0
     pub called_party_short_number_address: Option<u64>,
@@ -62,7 +75,7 @@ impl USetup {
         // Type1
         let simplex_duplex_selection = buffer.read_field(1, "simplex_duplex_selection")? != 0;
         // Type1
-        let basic_service_information = buffer.read_field(8, "basic_service_information")? as u8;
+        let basic_service_information = BasicServiceInformation::from_bitbuf(buffer)?;
         // Type1
         let request_to_transmit_send_data = buffer.read_field(1, "request_to_transmit_send_data")? != 0;
         // Type1
@@ -136,7 +149,7 @@ impl USetup {
         // Type1
         buffer.write_bits(self.simplex_duplex_selection as u64, 1);
         // Type1
-        buffer.write_bits(self.basic_service_information as u64, 8);
+        self.basic_service_information.to_bitbuf(buffer)?;
         // Type1
         buffer.write_bits(self.request_to_transmit_send_data as u64, 1);
         // Type1

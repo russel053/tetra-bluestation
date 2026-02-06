@@ -2,7 +2,10 @@ use core::fmt;
 
 use tetra_core::{BitBuffer, expect_pdu_type, pdu_parse_error::PduParseErr};
 use tetra_core::typed_pdu_fields::*;
+use crate::cmce::enums::call_status::CallStatus;
+use crate::cmce::enums::call_timeout_setup_phase::CallTimeoutSetupPhase;
 use crate::cmce::enums::{cmce_pdu_type_dl::CmcePduTypeDl, type3_elem_id::CmceType3ElemId};
+use crate::cmce::fields::basic_service_information::BasicServiceInformation;
 
 
 /// Representation of the D-CALL PROCEEDING PDU (Clause 14.7.1.2).
@@ -16,15 +19,15 @@ pub struct DCallProceeding {
     /// Type1, 14 bits, Call identifier
     pub call_identifier: u16,
     /// Type1, 3 bits, Call time-out, set-up phase
-    pub call_time_out_set_up_phase: u8,
+    pub call_time_out_set_up_phase: CallTimeoutSetupPhase,
     /// Type1, 1 bits, Hook method selection
     pub hook_method_selection: bool,
     /// Type1, 1 bits, Simplex/duplex selection
     pub simplex_duplex_selection: bool,
     /// Type2, 8 bits, If different from requested.,
-    pub basic_service_information: Option<u64>,
+    pub basic_service_information: Option<BasicServiceInformation>,
     /// Type2, 3 bits, Call status
-    pub call_status: Option<u64>,
+    pub call_status: Option<CallStatus>,
     /// Type2, 6 bits, Notification indicator
     pub notification_indicator: Option<u64>,
     /// Type3, Facility
@@ -44,7 +47,9 @@ impl DCallProceeding {
         // Type1
         let call_identifier = buffer.read_field(14, "call_identifier")? as u16;
         // Type1
-        let call_time_out_set_up_phase = buffer.read_field(3, "call_time_out_set_up_phase")? as u8;
+        let val = buffer.read_field(3, "call_time_out_set_up_phase")?;
+        let call_time_out_set_up_phase = CallTimeoutSetupPhase::try_from(val).unwrap(); // Never fails
+        
         // Type1
         let hook_method_selection = buffer.read_field(1, "hook_method_selection")? != 0;
         // Type1
@@ -54,9 +59,17 @@ impl DCallProceeding {
         let mut obit = delimiters::read_obit(buffer)?;
 
         // Type2
-        let basic_service_information = typed::parse_type2_generic(obit, buffer, 8, "basic_service_information")?;
+        let basic_service_information = typed::parse_type2_struct(obit, buffer, BasicServiceInformation::from_bitbuf)?;
         // Type2
-        let call_status = typed::parse_type2_generic(obit, buffer, 3, "call_status")?;
+        let val = typed::parse_type2_generic(obit, buffer, 3, "call_status")?;
+        let call_status = match val {
+            None => None,
+            Some(val) => {
+                Some(CallStatus::try_from(val)
+                    .map_err(|_| PduParseErr::InvalidValue { field: "call_status", value: val })?)
+            }
+        };
+
         // Type2
         let notification_indicator = typed::parse_type2_generic(obit, buffer, 6, "notification_indicator")?;
 
@@ -74,7 +87,7 @@ impl DCallProceeding {
 
         Ok(DCallProceeding { 
             call_identifier, 
-            call_time_out_set_up_phase, 
+            call_time_out_set_up_phase,
             hook_method_selection, 
             simplex_duplex_selection, 
             basic_service_information, 
@@ -104,10 +117,10 @@ impl DCallProceeding {
         if !obit { return Ok(()); }
 
         // Type2
-        typed::write_type2_generic(obit, buffer, self.basic_service_information, 8);
+        typed::write_type2_struct(obit, buffer, &self.basic_service_information, BasicServiceInformation::to_bitbuf)?;
 
         // Type2
-        typed::write_type2_generic(obit, buffer, self.call_status, 3);
+        typed::write_type2_generic(obit, buffer, self.call_status.map(|x| x.into()), 3);
 
         // Type2
         typed::write_type2_generic(obit, buffer, self.notification_indicator, 6);
@@ -137,5 +150,60 @@ impl fmt::Display for DCallProceeding {
             self.facility,
             self.proprietary,
         )
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use tetra_core::debug;
+
+    use super::*;
+
+    #[test]
+    fn test_parse_d_call_proceeding() {
+        debug::setup_logging_verbose();
+        let test_vec = "0000100000000000100110000";
+        let mut buffer = BitBuffer::from_bitstr(test_vec);
+        let pdu = DCallProceeding::from_bitbuf(&mut buffer).unwrap();
+        println!("Parsed DCallProceeding: {:?}", pdu);
+        
+        assert_eq!(pdu.call_identifier, 4);
+        assert_eq!(pdu.call_time_out_set_up_phase, CallTimeoutSetupPhase::T30s);
+        assert_eq!(pdu.hook_method_selection, false);
+        assert_eq!(pdu.simplex_duplex_selection, false);
+        // assert_eq!(pdu.basic_service_information, None);
+        assert_eq!(pdu.call_status, None);
+        assert_eq!(pdu.notification_indicator, None);
+        assert_eq!(pdu.facility, None);
+        assert_eq!(pdu.proprietary, None);
+
+        assert!(buffer.get_len_remaining() == 0);
+    }
+
+    #[test]
+    fn test_parse_d_call_proceeding_with_service_information() {
+        debug::setup_logging_verbose();
+        let test_vec = "0000100000000000100110001100000100000"; // 0000000
+        let mut buffer = BitBuffer::from_bitstr(test_vec);
+        let pdu= DCallProceeding::from_bitbuf(&mut buffer).unwrap();
+        println!("Parsed DCallProceeding: {:?}", pdu);
+        
+        assert_eq!(pdu.call_identifier, 4);
+        assert_eq!(pdu.call_time_out_set_up_phase, CallTimeoutSetupPhase::T30s);
+        assert_eq!(pdu.hook_method_selection, false);
+        assert_eq!(pdu.simplex_duplex_selection, false);
+        // assert_eq!(pdu.basic_service_information, None);
+        assert_eq!(pdu.call_status, None);
+        assert_eq!(pdu.notification_indicator, None);
+        assert_eq!(pdu.facility, None);
+        assert_eq!(pdu.proprietary, None);
+
+        let mut buf_out = BitBuffer::new_autoexpand(32);
+        pdu.to_bitbuf(&mut buf_out).unwrap();
+        tracing::info!("Serialized: {}", buf_out.dump_bin());
+        assert_eq!(buf_out.to_bitstr(), test_vec);
+        assert!(buffer.get_len_remaining() == 0);
+
     }
 }

@@ -164,7 +164,7 @@ impl MmBs {
             dltime: message.dltime,
             msg: SapMsgInner::LmmMleUnitdataReq(LmmMleUnitdataReq{
                 sdu,
-                handle: 0,
+                handle: prim.handle,
                 address: addr,
                 layer2service: 0,
                 stealing_permission: false,
@@ -220,6 +220,7 @@ impl MmBs {
             // A fairly untested, best-effort way of sending a PDU not supported error back
             // Note that an MS is not required to really do anything with this message.
             let (sapmsg, debug_str) = make_ul_mm_pdu_function_not_supported(
+                prim.handle,
                 MmPduTypeUl::UMmStatus, 
                 Some((6, pdu.status_uplink.into())),
                 prim.received_address.ssi,
@@ -293,7 +294,7 @@ impl MmBs {
             dltime: message.dltime,
             msg: SapMsgInner::LmmMleUnitdataReq(LmmMleUnitdataReq{
                 sdu,
-                handle: 0,
+                handle: prim.handle,
                 address: addr,
                 layer2service: 0,
                 stealing_permission: false,
@@ -478,6 +479,7 @@ impl TetraEntityTrait for MmBs {
     fn rx_prim(&mut self, queue: &mut MessageQueue, message: SapMsg) {
         
         tracing::debug!("rx_prim: {:?}", message);
+        // tracing::debug!(ts=%message.dltime, "rx_prim: {:?}", message);
         
         // There is only one SAP for MM
         assert!(message.sap == Sap::LmmSap);

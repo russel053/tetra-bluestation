@@ -40,7 +40,119 @@ macro_rules! assert_warn {
 
 struct AlignedFormatter;
 
+/// Visitor to extract the ts field value
+/// TODO revisit this approach
+struct TsVisitor {
+    ts: Option<String>,
+}
+
+impl tracing::field::Visit for TsVisitor {
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn fmt::Debug) {
+        if field.name() == "ts" {
+            self.ts = Some(format!("{:?}", value));
+        }
+    }
+}
+
 impl<S, N> FormatEvent<S, N> for AlignedFormatter
+where
+    S: tracing::Subscriber + for<'a> LookupSpan<'a>,
+    N: for<'a> FormatFields<'a> + 'static,
+{
+    fn format_event(
+        &self,
+        ctx: &FmtContext<'_, S, N>,
+        mut writer: format::Writer<'_>,
+        event: &tracing::Event<'_>,
+    ) -> fmt::Result {
+        let metadata = event.metadata();
+        
+        // Extract ts field if present
+        let mut visitor = TsVisitor { ts: None };
+        event.record(&mut visitor);
+        let has_ts = visitor.ts.is_some();
+        let ts_str = visitor.ts.unwrap_or_else(|| "             ".to_string());
+        
+        // Add ANSI color codes for different log levels
+        let (color_level, color_reset) = match *metadata.level() {
+            tracing::Level::ERROR => ("\x1b[31m", "\x1b[0m"),
+            tracing::Level::WARN => ("\x1b[33m", "\x1b[0m"),
+            tracing::Level::INFO => ("\x1b[32m", "\x1b[0m"),
+            tracing::Level::DEBUG => ("\x1b[34m", "\x1b[0m"),
+            tracing::Level::TRACE => ("\x1b[35m", "\x1b[0m"),
+        };
+        
+        // Transform file path: "crates/tetra-entities/src/cmce/subentities/cc_bs.rs" 
+        // becomes "ts [entities/cmce] cc_bs.rs"
+        let file_path = metadata.file().unwrap_or("unknown");
+        let formatted_path = if let Some(src_idx) = file_path.find("/src/") {
+            // Extract crate name and module path
+            let before_src = &file_path[..src_idx];
+            let after_src = &file_path[src_idx + 5..]; // Skip "/src/"
+            
+            // Extract the crate name (after "tetra-")
+            let crate_name = if let Some(tetra_idx) = before_src.rfind("tetra-") {
+                &before_src[tetra_idx + 6..]
+            } else {
+                before_src.rsplit('/').next().unwrap_or("unknown")
+            };
+            
+            // Extract module path and filename
+            if let Some(last_slash) = after_src.rfind('/') {
+                let module_path = &after_src[..last_slash];
+                let filename = &after_src[last_slash + 1..];
+                let first_module = module_path.split('/').next().unwrap_or("");
+                format!("{} [{}/{}] {}", ts_str, crate_name, first_module, filename)
+            } else {
+                format!("{} [{}] {}", ts_str, crate_name, after_src)
+            }
+        } else {
+            file_path.to_string()
+        };
+        
+        // Format: "LEVEL ts [module] file:line: message"
+        let location = format!(
+            "{}{:<5}{} {}:{}:",
+            color_level,
+            metadata.level(),
+            color_reset,
+            formatted_path,
+            metadata.line().unwrap_or(0)
+        );
+        
+        
+        // Capture the message to check for special prefixes
+        let mut message_buf = String::new();
+        let message_writer = format::Writer::new(&mut message_buf);
+        ctx.field_format().format_fields(message_writer, event)?;
+        
+        // Remove the ts field from the message if it was included
+        if has_ts {
+            if let Some(ts_idx) = message_buf.find("ts=") {
+                // Find the end of the ts field (either space or end of string)
+                if let Some(space_idx) = message_buf[ts_idx..].find(' ') {
+                    message_buf.replace_range(ts_idx..ts_idx + space_idx + 1, "");
+                } else {
+                    message_buf.truncate(ts_idx);
+                }
+            }
+        }
+        
+        // Check if the message starts with "->" or "<-" to reduce indentation
+        let mut padding = 70; // Default alignment
+        if message_buf.starts_with("->") || message_buf.starts_with("<-") {
+            padding -= 3;  // Reduce by 3 characters
+        }
+        
+        write!(writer, "{:<width$} {}", location, message_buf, width = padding)?;
+        writeln!(writer)
+    }
+}
+
+// TODO FIXME clean up at some point when new formatter is stable
+#[allow(dead_code)]
+struct AlignedFormatterOld;
+impl<S, N> FormatEvent<S, N> for AlignedFormatterOld
 where
     S: tracing::Subscriber + for<'a> LookupSpan<'a>,
     N: for<'a> FormatFields<'a> + 'static,
@@ -124,7 +236,7 @@ pub fn get_default_stdout_filter() -> EnvFilter {
 
         // Phy
         .add_directive("tetra_entities::phy::components=warn".parse().unwrap())
-        .add_directive("tetra_entities::phy::phy_bs=debug".parse().unwrap())
+        .add_directive("tetra_entities::phy::phy_bs=info".parse().unwrap())
         
         // Lmac
         .add_directive("tetra_entities::lmac=info".parse().unwrap())
@@ -147,7 +259,6 @@ pub fn get_default_stdout_filter() -> EnvFilter {
 fn get_default_logfile_filter() -> EnvFilter {
     EnvFilter::new("debug")
 }
-// fn setup_default_logging
 
 /// Sets up logging to stdout and optionally, a verbose log file
 /// If an output file  is requested, returns Some<WorkerGuard>. Keep this value alive

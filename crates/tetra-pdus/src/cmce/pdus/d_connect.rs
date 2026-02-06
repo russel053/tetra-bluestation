@@ -2,7 +2,10 @@ use core::fmt;
 
 use tetra_core::{BitBuffer, expect_pdu_type, pdu_parse_error::PduParseErr};
 use tetra_core::typed_pdu_fields::*;
+use crate::cmce::enums::call_timeout::CallTimeout;
+use crate::cmce::enums::transmission_grant::TransmissionGrant;
 use crate::cmce::enums::{cmce_pdu_type_dl::CmcePduTypeDl, type3_elem_id::CmceType3ElemId};
+use crate::cmce::fields::basic_service_information::BasicServiceInformation;
 
 /// Representation of the D-CONNECT PDU (Clause 14.7.1.4).
 /// This PDU shall be the order to the calling MS to through-connect.
@@ -15,21 +18,22 @@ pub struct DConnect {
     /// Type1, 14 bits, Call identifier
     pub call_identifier: u16,
     /// Type1, 4 bits, Call time-out
-    pub call_time_out: u8,
+    pub call_time_out: CallTimeout,
     /// Type1, 1 bits, Hook method selection
     pub hook_method_selection: bool,
     /// Type1, 1 bits, Simplex/duplex selection
     pub simplex_duplex_selection: bool,
     /// Type1, 2 bits, Transmission grant
-    pub transmission_grant: u8,
+    pub transmission_grant: TransmissionGrant,
     /// Type1, 1 bits, Transmission request permission
+    /// Set to true to signal MSes they are allowed to send a U-TX DEMAND
     pub transmission_request_permission: bool,
     /// Type1, 1 bits, Call ownership
     pub call_ownership: bool,
     /// Type2, 4 bits, Call priority
     pub call_priority: Option<u64>,
     /// Type2, 8 bits, See note,
-    pub basic_service_information: Option<u64>,
+    pub basic_service_information: Option<BasicServiceInformation>,
     /// Type2, 24 bits, Temporary address
     pub temporary_address: Option<u64>,
     /// Type2, 6 bits, Notification indicator
@@ -50,13 +54,17 @@ impl DConnect {
         // Type1
         let call_identifier = buffer.read_field(14, "call_identifier")? as u16;
         // Type1
-        let call_time_out = buffer.read_field(4, "call_time_out")? as u8;
+        let val = buffer.read_field(4, "call_time_out")?;
+        let call_time_out = CallTimeout::try_from(val).unwrap(); // Never fails
+
         // Type1
         let hook_method_selection = buffer.read_field(1, "hook_method_selection")? != 0;
         // Type1
         let simplex_duplex_selection = buffer.read_field(1, "simplex_duplex_selection")? != 0;
         // Type1
-        let transmission_grant = buffer.read_field(2, "transmission_grant")? as u8;
+        let val = buffer.read_field(2, "transmission_grant")?;
+        let transmission_grant = TransmissionGrant::try_from(val).unwrap(); // Never fails
+
         // Type1
         let transmission_request_permission = buffer.read_field(1, "transmission_request_permission")? != 0;
         // Type1
@@ -68,7 +76,7 @@ impl DConnect {
         // Type2
         let call_priority = typed::parse_type2_generic(obit, buffer, 4, "call_priority")?;
         // Type2
-        let basic_service_information = typed::parse_type2_generic(obit, buffer, 8, "basic_service_information")?;
+        let basic_service_information = typed::parse_type2_struct(obit, buffer, BasicServiceInformation::from_bitbuf)?;
         // Type2
         let temporary_address = typed::parse_type2_generic(obit, buffer, 24, "temporary_address")?;
         // Type2
@@ -132,7 +140,7 @@ impl DConnect {
         typed::write_type2_generic(obit, buffer, self.call_priority, 4);
 
         // Type2
-        typed::write_type2_generic(obit, buffer, self.basic_service_information, 8);
+        typed::write_type2_struct(obit, buffer, &self.basic_service_information, BasicServiceInformation::to_bitbuf)?;
 
         // Type2
         typed::write_type2_generic(obit, buffer, self.temporary_address, 24);
@@ -169,5 +177,33 @@ impl fmt::Display for DConnect {
             self.facility,
             self.proprietary,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_d_connect() {
+        let mut buffer = BitBuffer::from_bitstr("000100000000000010001110000000");
+        let result = DConnect::from_bitbuf(&mut buffer);
+        println!("Parsed DConnect: {:?}", result);
+
+        assert!(result.is_ok());
+        let d_connect = result.unwrap();
+        assert_eq!(d_connect.call_identifier, 4);
+        assert_eq!(d_connect.call_time_out, CallTimeout::T5m);
+        assert_eq!(d_connect.hook_method_selection, false);
+        assert_eq!(d_connect.simplex_duplex_selection, false);
+        assert_eq!(d_connect.transmission_grant, TransmissionGrant::Granted);
+        assert_eq!(d_connect.transmission_request_permission, false);
+        assert_eq!(d_connect.call_ownership, false);
+        assert!(d_connect.call_priority.is_none());
+        assert!(d_connect.basic_service_information.is_none());
+        assert!(d_connect.temporary_address.is_none());
+        assert!(d_connect.notification_indicator.is_none());
+        assert!(d_connect.facility.is_none());
+        assert!(d_connect.proprietary.is_none());
     }
 }

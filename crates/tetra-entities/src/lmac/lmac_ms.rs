@@ -264,6 +264,8 @@ impl TetraEntityTrait for LmacMs {
     fn rx_prim(&mut self, queue: &mut MessageQueue, message: SapMsg) {
 
         tracing::debug!("rx_prim: {:?}", message);
+        // tracing::debug!(ts=%message.dltime, "rx_prim: {:?}", message);
+
         match message.sap {
             Sap::TpSap => {
                 self.rx_tp_prim(queue, message);
@@ -275,16 +277,14 @@ impl TetraEntityTrait for LmacMs {
         }
     }
 
-    fn tick_start(&mut self, _queue: &mut MessageQueue, ts: Option<TdmaTime>) {
+    fn tick_start(&mut self, _queue: &mut MessageQueue, ts: TdmaTime) {
         
         // Reset current burst state
         self.cur_burst = CurBurst::default(); 
         
         // Increase TDMA time if it has been set
         if let Some(mod_time) = self.ts {
-            if let Some(arg_time) = ts {
-                assert!(mod_time == arg_time, "time out of sync");
-            }
+            assert!(mod_time == ts, "time out of sync"); // TODO handle properly
             self.ts = Some(mod_time.add_timeslots(1));
             tracing::debug!("tick: new TdmaTime: {:?}", self.ts.unwrap()); // Guaranteed in BS mode
         }

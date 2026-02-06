@@ -57,7 +57,7 @@ pub struct MessageRouter {
     /// The current TDMA time, if applicable. 
     /// For Bs mode, this is always available
     /// For Ms/Mon mode, it is recovered from a received SYNC frame and communicated in a different way
-    ts: Option<TdmaTime>,
+    ts: TdmaTime,
 }
 
 
@@ -69,14 +69,14 @@ impl MessageRouter {
                 messages: VecDeque::new(),
             },
             _config: config,
-            ts: None,
+            ts: TdmaTime::default(),
         }
     }
 
     /// For BS mode, sets global TDMA time
     /// Incremented each tick and passed to entities in tick() function
     pub fn set_dl_time(&mut self, ts: TdmaTime) {        
-        self.ts = Some(ts);
+        self.ts = ts;
     }
 
     pub fn register_entity(&mut self, entity: Box<dyn TetraEntityTrait>) {
@@ -85,6 +85,7 @@ impl MessageRouter {
         self.entities.insert(comp_type, entity);
     }
 
+    /// Returns a mut ref to a component of the requested type
     pub fn get_entity(&mut self, comp: TetraEntity) -> Option<&mut dyn TetraEntityTrait> {
         self.entities.get_mut(&comp).map(|entity| entity.as_mut())
     }
@@ -123,21 +124,22 @@ impl MessageRouter {
         self.msg_queue.messages.len()
     }
 
-    pub fn tick_all(&mut self) {
+
+
+    pub fn tick_start(&mut self) {
         
-        if let Some(ts) = self.ts {
-            // tracing::info!("--- tick dl {} ul {} txdl {} ----------------------------",
-            //     ts, ts.add_timeslots(-2), ts.add_timeslots(MACSCHED_TX_AHEAD as i32));
-            tracing::info!("--- tick dl {} ----------------------------", ts);
-        } else {
-            tracing::info!("---------------------------- tick ----------------------------");
-        }
+        // tracing::info!("--- tick dl {} ul {} txdl {} ----------------------------",
+        //     self.ts, self.ts.add_timeslots(-2), self.ts.add_timeslots(MACSCHED_TX_AHEAD as i32));
+        tracing::info!("--- tick dl {} ----------------------------", self.ts);
         
         // Call tick on all entities
         for entity in self.entities.values_mut() {
             entity.tick_start(&mut self.msg_queue, self.ts);
         }
     }
+
+
+
 
     /// Executes all end-of-tick functions:
     /// - LLC sends down all outstanding BL-ACKs
@@ -174,9 +176,7 @@ impl MessageRouter {
         self.deliver_all_messages();
 
         // Increment the TDMA time if set
-        if let Some(ref mut ts) = self.ts {
-            self.ts = Some(ts.add_timeslots(1));
-        }
+        self.ts = self.ts.add_timeslots(1);
     }
 
 
@@ -187,7 +187,7 @@ impl MessageRouter {
 
         loop {
             // Send tick_start event
-            self.tick_all();
+            self.tick_start();
             
             // Deliver messages until queue empty
             while self.get_msgqueue_len() > 0{

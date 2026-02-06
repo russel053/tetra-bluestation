@@ -67,6 +67,20 @@ impl TdmaTime {
         time_int_diff(self.to_int(), b.to_int())
     }
 
+    /// Age of this TdmaTime compared to now
+    #[inline(always)]
+    pub fn age(self, now: TdmaTime) -> i32 {
+        now.diff(self)
+    }
+
+    #[inline(always)]
+    /// Round this time up to the next occurrence for the given timeslot
+    /// If already the right timeslot, time remains unchanged
+    pub fn forward_to_timeslot(self, ts: u8) -> TdmaTime {
+        let slots_to_add = ((ts + 4 - self.t) % 4) as i32;
+        self.add_timeslots(slots_to_add)
+    }
+
     /// Returns true if this DL timeslot should contain a mandatory BSCH (SYNC) block
     pub fn is_mandatory_bsch(&self) -> bool {
         self.f == 18 && self.t == 4 - ((self.m + 1) % 4)

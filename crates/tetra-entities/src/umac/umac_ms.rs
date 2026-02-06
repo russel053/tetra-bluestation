@@ -763,6 +763,8 @@ impl TetraEntityTrait for UmacMs {
     fn rx_prim(&mut self, queue: &mut MessageQueue, message: SapMsg) {
         
         tracing::debug!("rx_prim: {:?}", message);
+        // tracing::debug!(ts=%message.dltime, "rx_prim: {:?}", message);
+
         match message.sap {
             Sap::TmvSap => {
                 self.rx_tmv_prim(queue, message);

@@ -37,6 +37,7 @@ impl BitBuffer {
     }
 
     /// Wrap an existing byte-vector as a BitBuffer (all bits initially readable/writeable).
+    /// No new allocation is needed here. 
     pub fn from_vec(data: Vec<u8>) -> Self {
         let len_bits = data.len() * 8;
         BitBuffer {

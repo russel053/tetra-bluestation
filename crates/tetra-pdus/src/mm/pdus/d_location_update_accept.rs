@@ -135,7 +135,20 @@ impl DLocationUpdateAccept {
         buffer.write_bits(self.location_update_accept_type as u64, 3);
 
         // Check if any optional field present and place o-bit
-        let obit = self.ssi.is_some() || self.address_extension.is_some() || self.subscriber_class.is_some() || self.energy_saving_information.is_some() || self.scch_information_and_distribution_on_18th_frame.is_some() || self.new_registered_area.is_some() || self.security_downlink.is_some() || self.group_identity_location_accept.is_some() || self.default_group_attachment_lifetime.is_some() || self.authentication_downlink.is_some() || self.group_identity_security_related_information.is_some() || self.cell_type_control.is_some() || self.proprietary.is_some() ;
+        let obit = 
+            self.ssi.is_some() || 
+            self.address_extension.is_some() || 
+            self.subscriber_class.is_some() || 
+            self.energy_saving_information.is_some() || 
+            self.scch_information_and_distribution_on_18th_frame.is_some() || 
+            self.new_registered_area.is_some() || 
+            self.security_downlink.is_some() || 
+            self.group_identity_location_accept.is_some() || 
+            self.default_group_attachment_lifetime.is_some() || 
+            self.authentication_downlink.is_some() || 
+            self.group_identity_security_related_information.is_some() || 
+            self.cell_type_control.is_some() || 
+            self.proprietary.is_some() ;
         delimiters::write_obit(buffer, obit as u8);
         if !obit { return Ok(()); }
 

@@ -17,6 +17,7 @@ pub struct DTxContinue {
     /// Type1, 1 bits, do_Continue
     pub do_continue: bool,
     /// Type1, 1 bits, Transmission request permission
+    /// Set to true to signal MSes they are allowed to send a U-TX DEMAND
     pub transmission_request_permission: bool,
     /// Type2, 6 bits, Notification indicator
     pub notification_indicator: Option<u64>,

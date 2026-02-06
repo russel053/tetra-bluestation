@@ -3,6 +3,7 @@ use core::fmt;
 use tetra_core::{BitBuffer, expect_pdu_type, pdu_parse_error::PduParseErr};
 use tetra_core::typed_pdu_fields::*;
 use crate::cmce::enums::{cmce_pdu_type_ul::CmcePduTypeUl, type3_elem_id::CmceType3ElemId};
+use crate::cmce::fields::basic_service_information::BasicServiceInformation;
 
 /// Representation of the U-CALL RESTORE PDU (Clause 14.7.2.2).
 /// This PDU shall be the order from the MS for restoration of a specific call after a temporary break of the call.
@@ -27,7 +28,7 @@ pub struct UCallRestore {
     /// Conditional 24 bits, See note 1, condition: other_party_type_identifier == 2
     pub other_party_extension: Option<u64>,
     /// Type2, 8 bits, See note 3,
-    pub basic_service_information: Option<u64>,
+    pub basic_service_information: Option<BasicServiceInformation>,
     /// Type3, Facility
     pub facility: Option<Type3FieldGeneric>,
     /// Type3, DM-MS address
@@ -67,7 +68,7 @@ impl UCallRestore {
         let mut obit = delimiters::read_obit(buffer)?;
 
         // Type2
-        let basic_service_information = typed::parse_type2_generic(obit, buffer, 8, "basic_service_information")?;
+        let basic_service_information = typed::parse_type2_struct(obit, buffer, BasicServiceInformation::from_bitbuf)?;
 
 
         // Type3
@@ -129,7 +130,7 @@ impl UCallRestore {
         if !obit { return Ok(()); }
 
         // Type2
-        typed::write_type2_generic(obit, buffer, self.basic_service_information, 8);
+        typed::write_type2_struct(obit, buffer, &self.basic_service_information, BasicServiceInformation::to_bitbuf)?;
 
         // Type3
         typed::write_type3_generic(obit, buffer, &self.facility, CmceType3ElemId::Facility)?;        

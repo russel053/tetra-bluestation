@@ -1,6 +1,6 @@
 // Clause 17.3.2 Service primitives for the LMM-SAP
 #![allow(unused)]
-use tetra_core::{BitBuffer, TetraAddress, Todo};
+use tetra_core::{BitBuffer, MleHandle, TetraAddress, Todo};
 
 
 /// This shall be used as a request to initiate the selection of a cell for communications. The
@@ -128,14 +128,14 @@ pub struct LmmMlePrepareConfirm {
 
 #[derive(Debug)]
 pub struct LmmMleReportInd {
-    pub handle: Todo,
+    pub handle: MleHandle,
     pub transfer_result: Todo,
 }
 
 #[derive(Debug)]
 pub struct LmmMleUnitdataReq {
     pub sdu: BitBuffer,
-    pub handle: Todo,
+    pub handle: MleHandle,
     // pub address_type: Todo,
     pub address: TetraAddress,
     pub layer2service: Todo,
@@ -149,7 +149,7 @@ pub struct LmmMleUnitdataReq {
 #[derive(Debug)]
 pub struct LmmMleUnitdataInd {
     pub sdu: BitBuffer,
-    pub handle: Todo,
+    pub handle: MleHandle,
     pub received_address: TetraAddress,
     // pub received_address_type: Todo,
 }
