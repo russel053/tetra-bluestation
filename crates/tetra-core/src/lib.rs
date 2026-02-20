@@ -3,7 +3,7 @@
 //! This crate provides fundamental types and utilities used across the TETRA stack
 
 /// Git version string, set at compile time
-pub const GIT_VERSION: &str = git_version::git_version!();
+pub const GIT_VERSION: &str = git_version::git_version!(fallback = "unknown");
 /// Stack version followed by git version string, e.g., "0.1.0-aabbccdd"
 pub const STACK_VERSION: &str = const_format::formatcp!("{}-{}", env!("CARGO_PKG_VERSION"), GIT_VERSION);
 
