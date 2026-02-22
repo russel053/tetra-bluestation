@@ -186,10 +186,7 @@ impl LmacBs {
         }
 
         if !(blk.block_num == PhyBlockNum::Both || blk.block_num == PhyBlockNum::Block2) {
-            tracing::trace!(
-                "rx_blk_traffic: ignoring unsupported blk_num={:?} for TCH/S",
-                blk.block_num
-            );
+            tracing::trace!("rx_blk_traffic: ignoring unsupported blk_num={:?} for TCH/S", blk.block_num);
             return;
         }
 
@@ -214,7 +211,13 @@ impl LmacBs {
             // In aggressive hangtime bounce mode we may still see SCH/F signalling bursts on this slot.
             // Try decoding as full-slot control before giving up.
             if train_type == TrainingSequence::NormalTrainSeq1 && burst_type == BurstType::NUB {
-                let blk_cp = TpUnitdataInd { train_type, burst_type, block_type, block_num, block: type5_copy };
+                let blk_cp = TpUnitdataInd {
+                    train_type,
+                    burst_type,
+                    block_type,
+                    block_num,
+                    block: type5_copy,
+                };
                 self.rx_blk_control(queue, blk_cp, LogicalChannel::SchF, ul_time);
                 return;
             }
@@ -298,9 +301,7 @@ impl LmacBs {
         tracing::debug!("rx_tp_prim: msg {:?}", message);
 
         let ul_time = message.dltime;
-        let SapMsgInner::TpUnitdataInd(prim) = message.msg else {
-            panic!()
-        };
+        let SapMsgInner::TpUnitdataInd(prim) = message.msg else { panic!() };
 
         // We move `prim` into rx handlers below. Cache any small copyable fields we still need after.
         let block_num = prim.block_num;
@@ -356,7 +357,11 @@ impl LmacBs {
         if let Some(true) = prim.second_half_stolen {
             let ts = prim.time.unwrap_or(message.dltime).t;
             if (1..=4).contains(&ts) {
-                tracing::info!("LMAC: ul_second_block_stolen set for ts {} (time {})", ts, prim.time.unwrap_or(message.dltime));
+                tracing::info!(
+                    "LMAC: ul_second_block_stolen set for ts {} (time {})",
+                    ts,
+                    prim.time.unwrap_or(message.dltime)
+                );
                 self.ul_second_block_stolen[ts as usize - 1] = true;
             } else {
                 tracing::warn!("rx_tmv_configure_req: invalid ts {} for second_half_stolen", ts);

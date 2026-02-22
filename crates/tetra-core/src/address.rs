@@ -28,13 +28,18 @@ impl core::fmt::Display for SsiType {
     }
 }
 
-#[derive(Copy, Debug, Clone, PartialEq)]
+#[derive(Copy, Debug, Clone)]
 pub struct TetraAddress {
     pub ssi: u32,
     pub ssi_type: SsiType,
     /// Set to true if the address is an ESI (Encrypted Subscriber Identity)
     /// We maintain this field to allow us to pass still-encrypted SSIs up the stack if we want to
     pub encrypted: bool,
+}
+impl PartialEq for TetraAddress {
+    fn eq(&self, other: &Self) -> bool {
+        self.ssi == other.ssi
+    }
 }
 
 impl TetraAddress {

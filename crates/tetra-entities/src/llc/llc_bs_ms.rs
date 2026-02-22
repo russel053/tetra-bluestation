@@ -56,11 +56,7 @@ impl Llc {
 
         // Prefer exact time-slot match, but fall back to any pending ACK for this SSI.
         // Some UL/DL scheduling paths may jitter the associated t_start.
-        if let Some(i) = self
-            .scheduled_out_acks
-            .iter()
-            .position(|a| a.t_start.t == tn && a.addr.ssi == ssi)
-        {
+        if let Some(i) = self.scheduled_out_acks.iter().position(|a| a.t_start.t == tn && a.addr.ssi == ssi) {
             let n = self.scheduled_out_acks[i].n;
             self.scheduled_out_acks.remove(i);
             return Some(n);
@@ -105,16 +101,15 @@ impl Llc {
         let ssi = addr.ssi;
 
         // Prefer exact tn match.
-        if let Some(i) = self
-            .expected_in_acks
-            .iter()
-            .position(|a| a.t_start.t == tn && a.addr.ssi == ssi)
-        {
+        if let Some(i) = self.expected_in_acks.iter().position(|a| a.t_start.t == tn && a.addr.ssi == ssi) {
             let expected = self.expected_in_acks[i].n;
             if expected != n {
                 tracing::warn!(
                     "Received unexpected ACK for t: {} ssi: {} got n {}, expected {} — resetting send seq",
-                    tn, ssi, n, expected
+                    tn,
+                    ssi,
+                    n,
+                    expected
                 );
                 // Only reset the send sequence counter; do NOT drop scheduled outgoing
                 // ACKs or other expected ACKs, as that would cause the MS to timeout
@@ -131,7 +126,10 @@ impl Llc {
             if expected != n {
                 tracing::warn!(
                     "Received unexpected ACK for t: {} ssi: {} got n {}, expected {} (tn drift) — resetting send seq",
-                    tn, ssi, n, expected
+                    tn,
+                    ssi,
+                    n,
+                    expected
                 );
                 self.link_send_seq.remove(&ssi);
             }
@@ -200,11 +198,11 @@ impl Llc {
             pdu_buf.seek(0);
             tracing::debug!("-> {:?} sdu {}", pdu, pdu_buf.dump_bin());
             // Register that we expect an ACK back (acknowledged mode only)
-            // In basic link acknowledged mode, the peer returns N(R) = next expected N(S).
-            // With 1-bit alternating sequence, that is ns ^ 1.
-            self.register_expected_ack(message.dltime, prim.main_address, ns ^ 1);
+            // In basic link acknowledged mode, the peer returns N(R) = received TL-SDU number (the accepted N(S)).
+            // Therefore we expect N(R) == ns for a successful transfer (mod-2).
+            self.register_expected_ack(message.dltime, prim.main_address, ns);
         } else {
-            // BL-DATA (unacknowledged, with or without FCS)
+            // BL-DATA (acknowledged, with or without FCS; no piggyback ACK)
             let pdu = BlData {
                 has_fcs: prim.fcs_flag,
                 ns,
@@ -215,7 +213,8 @@ impl Llc {
             pdu_buf.copy_bits(&mut prim.tl_sdu, sdu_len);
             pdu_buf.seek(0);
             tracing::debug!("-> {:?} sdu {}", pdu, pdu_buf.dump_bin());
-            // No ACK expected for unacknowledged BL-DATA
+            // Register that we expect an ACK back (acknowledged mode)
+            self.register_expected_ack(message.dltime, prim.main_address, ns);
         }
 
         // TODO FIXME:
@@ -382,19 +381,18 @@ impl Llc {
                 panic!();
             }
         };
-
-        // If FCS is present, check it. If wrong, we bail here
-        if has_fcs && !fcs::check_fcs(&pdu) {
+        // Validate FCS (if present). If it fails, the PDU shall be treated as not received.
+        // (EN 300 392-2: on incorrect FCS, no acknowledgement is sent for that PDU.)
+        let fcs_ok = !has_fcs || fcs::check_fcs(&pdu);
+        if !fcs_ok {
             tracing::warn!("FCS check failed");
             return;
         }
 
-        // If ns is present, we need to send an ACK
+        // If N(S) is present, we need to send a BL-ACK (possibly later in tick_end()).
         if let Some(ns) = ns {
-            // Send ACK
-            // let ul_time = message.dltime.add_timeslots(-2);
-            // For alternating-bit basic link, acknowledge with next expected sequence (ns ^ 1)
-            self.schedule_outgoing_ack(message.dltime, prim.main_address, ns ^ 1);
+            // ETSI: BL-ACK carries N(R) = V(R) = the received TL-SDU number (accepted N(S)).
+            self.schedule_outgoing_ack(message.dltime, prim.main_address, ns);
         }
 
         // if nr is present, we have received an ACK on a previous message

@@ -29,8 +29,7 @@ use tetra_saps::{
 };
 
 use crate::{
-    MessageQueue,
-    MessagePrio,
+    MessagePrio, MessageQueue,
     cmce::components::circuit_mgr::{CircuitMgr, CircuitMgrCmd},
 };
 
@@ -491,17 +490,8 @@ impl CcBsSubentity {
             .active_calls
             .iter()
             .find(|(_, c)| c.dest_gssi == dest_gssi)
-            .map(|(&call_id, c)| {
-                (
-                    call_id,
-                    c.ts,
-                    c.usage,
-                    !c.tx_active && c.hangtime_start.is_some(),
-                    c.tx_active,
-                )
-            })
+            .map(|(&call_id, c)| (call_id, c.ts, c.usage, !c.tx_active && c.hangtime_start.is_some(), c.tx_active))
         {
-
             tracing::info!(
                 "rx_u_setup: reusing existing call for gssi={} call_id={} ts={} (hangtime={} tx_active={})",
                 dest_gssi,
@@ -593,16 +583,16 @@ impl CcBsSubentity {
                 // Resume traffic mode (exit hangtime) in UMAC.
                 queue.push_prio(
                     SapMsg {
-                    sap: Sap::Control,
-                    src: TetraEntity::Cmce,
-                    dest: TetraEntity::Umac,
-                    dltime: message.dltime,
-                    msg: SapMsgInner::CmceCallControl(CallControl::FloorGranted {
-                        call_id: existing_call_id,
-                        source_issi: calling_party.ssi,
-                        dest_gssi,
-                        ts,
-                    }),
+                        sap: Sap::Control,
+                        src: TetraEntity::Cmce,
+                        dest: TetraEntity::Umac,
+                        dltime: message.dltime,
+                        msg: SapMsgInner::CmceCallControl(CallControl::FloorGranted {
+                            call_id: existing_call_id,
+                            source_issi: calling_party.ssi,
+                            dest_gssi,
+                            ts,
+                        }),
                     },
                     MessagePrio::Immediate,
                 );
@@ -944,11 +934,7 @@ impl CcBsSubentity {
             .collect();
 
         for (call_id, ts, dest_gssi) in stale {
-            tracing::info!(
-                "Voice inactivity timeout for call_id={} ts={}, auto-entering hangtime",
-                call_id,
-                ts
-            );
+            tracing::info!("Voice inactivity timeout for call_id={} ts={}, auto-entering hangtime", call_id, ts);
             if let Some(call) = self.active_calls.get_mut(&call_id) {
                 call.tx_active = false;
                 call.hangtime_start = Some(self.dltime);
@@ -1164,11 +1150,11 @@ impl CcBsSubentity {
         // This stops downlink TCH fill frames and enables UL CommonAndAssigned so MS can request the floor.
         queue.push_prio(
             SapMsg {
-            sap: Sap::Control,
-            src: TetraEntity::Cmce,
-            dest: TetraEntity::Umac,
-            dltime: self.dltime,
-            msg: SapMsgInner::CmceCallControl(CallControl::FloorReleased { call_id, ts }),
+                sap: Sap::Control,
+                src: TetraEntity::Cmce,
+                dest: TetraEntity::Umac,
+                dltime: self.dltime,
+                msg: SapMsgInner::CmceCallControl(CallControl::FloorReleased { call_id, ts }),
             },
             MessagePrio::Immediate,
         );
@@ -1261,16 +1247,16 @@ impl CcBsSubentity {
         // Notify UMAC to resume traffic mode (exit hangtime) for this timeslot.
         queue.push_prio(
             SapMsg {
-            sap: Sap::Control,
-            src: TetraEntity::Cmce,
-            dest: TetraEntity::Umac,
-            dltime: self.dltime,
-            msg: SapMsgInner::CmceCallControl(CallControl::FloorGranted {
-                call_id,
-                source_issi: requesting_party.ssi,
-                dest_gssi: dest_addr.ssi,
-                ts,
-            }),
+                sap: Sap::Control,
+                src: TetraEntity::Cmce,
+                dest: TetraEntity::Umac,
+                dltime: self.dltime,
+                msg: SapMsgInner::CmceCallControl(CallControl::FloorGranted {
+                    call_id,
+                    source_issi: requesting_party.ssi,
+                    dest_gssi: dest_addr.ssi,
+                    ts,
+                }),
             },
             MessagePrio::Immediate,
         );
@@ -1424,7 +1410,6 @@ impl CcBsSubentity {
 
             // Speaker change handled on existing call; do not allocate a new circuit.
             return;
-
         }
 
         // New network call - allocate circuit
@@ -1663,16 +1648,20 @@ impl CcBsSubentity {
 
         // Only treat this as a bounce if it is the same speaker (or the original local caller).
         // Otherwise we require the normal L3 floor request path (U-TX DEMAND / U-SETUP).
-        let allowed = self.active_calls.get(&call_id).map(|c| {
-            if c.source_issi == ssi {
-                true
-            } else {
-                match &c.origin {
-                    CallOrigin::Local { caller_addr } => caller_addr.ssi == ssi,
-                    CallOrigin::Network { .. } => false,
+        let allowed = self
+            .active_calls
+            .get(&call_id)
+            .map(|c| {
+                if c.source_issi == ssi {
+                    true
+                } else {
+                    match &c.origin {
+                        CallOrigin::Local { caller_addr } => caller_addr.ssi == ssi,
+                        CallOrigin::Network { .. } => false,
+                    }
                 }
-            }
-        }).unwrap_or(false);
+            })
+            .unwrap_or(false);
 
         if !allowed {
             tracing::debug!(
@@ -1803,7 +1792,10 @@ impl CcBsSubentity {
         if age >= 0 && age < HANGTIME_ENTRY_COOLDOWN_SLOTS {
             tracing::debug!(
                 "rx_uplink_tch_activity: ignoring spurious UL activity on ts={} ssi={} (hangtime entered {}ts ago, cooldown={}ts)",
-                ts, ssi, age, HANGTIME_ENTRY_COOLDOWN_SLOTS
+                ts,
+                ssi,
+                age,
+                HANGTIME_ENTRY_COOLDOWN_SLOTS
             );
             return;
         }
@@ -1859,7 +1851,6 @@ impl CcBsSubentity {
             });
         }
     }
-
 
     /// Send D-TX GRANTED via FACCH stealing
     fn send_d_tx_granted_facch(&mut self, queue: &mut MessageQueue, call_id: u16, source_issi: u32, dest_gssi: u32, ts: u8) {

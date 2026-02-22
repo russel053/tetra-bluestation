@@ -20,6 +20,15 @@ const MIN_SLOT_CAP_FOR_RES_FRAG_START: usize = 32;
 /// We won't insert a fragment if less than MIN_SLOT_CAP_FOR_FRAG bits are free in the slot
 const MIN_SLOT_CAP_FOR_FRAG: usize = 16;
 
+/// A MAC-RESOURCE header of this size or larger is considered "large".
+///
+/// Rationale: SCH/F blocks may pack multiple MAC-PDUs. When a MAC-RESOURCE header is large
+/// (e.g. it contains event label / usage marker / channel allocation), attempting to *start*
+/// that resource late in the block often fails due to insufficient remaining capacity.
+/// Treating this as "needs a clean start" avoids endless does_not_fit deferrals without
+/// relying on address type (group vs individual).
+const LARGE_MAC_RESOURCE_HDR_BITS: usize = 64;
+
 impl BsFragger {
     pub fn new(resource: MacResource, sdu: BitBuffer) -> Self {
         assert!(sdu.get_pos() == 0, "SDU must be at the start of the buffer");
@@ -33,12 +42,25 @@ impl BsFragger {
         }
     }
 
-    /// True if this fragger targets a group address (GSSI). Used to avoid starving MM responses on TS1.
+    /// True if this fragger targets a group address (GSSI).
     pub fn is_group_addr(&self) -> bool {
         matches!(
             self.resource.addr,
             Some(a) if a.ssi_type == tetra_core::address::SsiType::Gssi
         )
+    }
+
+    /// Return the computed MAC-RESOURCE header length in bits.
+    pub fn header_len_bits(&self) -> usize {
+        self.resource.compute_header_len()
+    }
+
+    /// Heuristic: returns true if starting this MAC-RESOURCE benefits from a clean SCH/F block.
+    ///
+    /// This is intentionally *not* based on address type. Individual call-control messages can
+    /// also have large headers and suffer from the same fragmentation start failure mode.
+    pub fn needs_clean_slot_start(&self) -> bool {
+        self.header_len_bits() >= LARGE_MAC_RESOURCE_HDR_BITS
     }
 
     /// True if the MAC-RESOURCE header has already been emitted (i.e. fragmentation is in progress).
@@ -118,11 +140,14 @@ impl BsFragger {
             // Avoid starting fragmentation with a tiny first fragment. Some terminals are sensitive to
             // interleaved / micro-fragmented MAC-RESOURCE sequences (especially group-call signalling with ChanAlloc).
             let sdu_bits_avail = slot_cap_bits - hdr_len_bits;
-            let min_first_frag_bits = if self.is_group_addr() || self.resource.chan_alloc_element.is_some() { MIN_SLOT_CAP_FOR_FRAG } else { 0 };
+            let min_first_frag_bits = if self.needs_clean_slot_start() { MIN_SLOT_CAP_FOR_FRAG } else { 0 };
             if sdu_bits_avail < min_first_frag_bits {
                 tracing::debug!(
                     "-> frag_start_too_small (cap={} hdr={} sdu_bits_avail={} min={}), trying again next frame",
-                    slot_cap_bits, hdr_len_bits, sdu_bits_avail, min_first_frag_bits
+                    slot_cap_bits,
+                    hdr_len_bits,
+                    sdu_bits_avail,
+                    min_first_frag_bits
                 );
                 return false;
             }
