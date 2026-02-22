@@ -370,9 +370,6 @@ impl LmacBs {
                 tracing::warn!("rx_tmv_configure_req: invalid ts {} for second_half_stolen", ts);
             }
         }
-                tracing::warn!("rx_tmv_configure_req: invalid ts {} for second_half_stolen", ts);
-            }
-        }
     }
 
     /// Request from Umac to transmit a message
