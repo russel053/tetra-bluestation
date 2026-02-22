@@ -4,7 +4,7 @@ use std::panic;
 use crate::{MessageQueue, TetraEntityTrait};
 use tetra_config::SharedConfig;
 use tetra_core::tetra_entities::TetraEntity;
-use tetra_core::{BitBuffer, Sap, TdmaTime, TetraAddress, unimplemented_log};
+use tetra_core::{BitBuffer, Sap, SsiType, TdmaTime, TetraAddress, unimplemented_log};
 use tetra_saps::tla::{TlaTlDataIndBl, TlaTlUnitdataIndBl};
 use tetra_saps::tma::TmaUnitdataReq;
 use tetra_saps::{SapMsg, SapMsgInner};
@@ -54,18 +54,26 @@ impl Llc {
     fn get_out_ack_n_if_any(&mut self, tn: u8, addr: TetraAddress) -> Option<u8> {
         let ssi = addr.ssi;
 
-        // Prefer exact time-slot match, but fall back to any pending ACK for this SSI.
-        // Some UL/DL scheduling paths may jitter the associated t_start.
-        if let Some(i) = self.scheduled_out_acks.iter().position(|a| a.t_start.t == tn && a.addr.ssi == ssi) {
+        if let Some(i) = self
+            .scheduled_out_acks
+            .iter()
+            .position(|a| a.t_start.t == tn && a.addr.ssi == ssi)
+        {
             let n = self.scheduled_out_acks[i].n;
             self.scheduled_out_acks.remove(i);
             return Some(n);
         }
 
-        if let Some(i) = self.scheduled_out_acks.iter().position(|a| a.addr.ssi == ssi) {
-            let n = self.scheduled_out_acks[i].n;
-            self.scheduled_out_acks.remove(i);
-            return Some(n);
+        // If we have an ACK queued for this SSI but on a different timeslot,
+        // log it loudly so we can fix the UL/DL time-domain mismatch at the source.
+        if self.scheduled_out_acks.iter().any(|a| a.addr.ssi == ssi) {
+            let slots: Vec<u8> = self
+                .scheduled_out_acks
+                .iter()
+                .filter(|a| a.addr.ssi == ssi)
+                .map(|a| a.t_start.t)
+                .collect();
+            tracing::warn!("get_out_ack_n_if_any: no ACK for ssi {} on tn {}, but pending on tn(s) {:?}", ssi, tn, slots);
         }
 
         None
@@ -100,36 +108,16 @@ impl Llc {
     fn process_incoming_ack(&mut self, tn: u8, addr: TetraAddress, n: u8) {
         let ssi = addr.ssi;
 
-        // Prefer exact tn match.
-        if let Some(i) = self.expected_in_acks.iter().position(|a| a.t_start.t == tn && a.addr.ssi == ssi) {
+        if let Some(i) = self
+            .expected_in_acks
+            .iter()
+            .position(|a| a.t_start.t == tn && a.addr.ssi == ssi)
+        {
             let expected = self.expected_in_acks[i].n;
             if expected != n {
                 tracing::warn!(
-                    "Received unexpected ACK for t: {} ssi: {} got n {}, expected {} — resetting send seq",
-                    tn,
-                    ssi,
-                    n,
-                    expected
-                );
-                // Only reset the send sequence counter; do NOT drop scheduled outgoing
-                // ACKs or other expected ACKs, as that would cause the MS to timeout
-                // waiting for its ACK and eventually disconnect.
-                self.link_send_seq.remove(&ssi);
-            }
-            self.expected_in_acks.remove(i);
-            return;
-        }
-
-        // Fall back to any outstanding ACK expectation for this SSI (tn may drift).
-        if let Some(i) = self.expected_in_acks.iter().position(|a| a.addr.ssi == ssi) {
-            let expected = self.expected_in_acks[i].n;
-            if expected != n {
-                tracing::warn!(
-                    "Received unexpected ACK for t: {} ssi: {} got n {}, expected {} (tn drift) — resetting send seq",
-                    tn,
-                    ssi,
-                    n,
-                    expected
+                    "process_incoming_ack: ACK mismatch for t: {} ssi: {} got n {}, expected {} — resetting send seq",
+                    tn, ssi, n, expected
                 );
                 self.link_send_seq.remove(&ssi);
             }
@@ -137,10 +125,25 @@ impl Llc {
             return;
         }
 
-        // No expected ACK recorded — this is normal: late retransmission, piggybacked
-        // ACK on a BlData the MS sent, or ACK for a broadcast we didn't track.
-        // Silently ignore; do NOT reset BL state, as that would desynchronize the
-        // send sequence and potentially drop pending outgoing ACKs.
+        // If we have pending expectations for this SSI but on another tn, log it so the
+        // UL/DL time-domain mismatch can be fixed at the source.
+        if self.expected_in_acks.iter().any(|a| a.addr.ssi == ssi) {
+            let pending: Vec<(u8, u8)> = self
+                .expected_in_acks
+                .iter()
+                .filter(|a| a.addr.ssi == ssi)
+                .map(|a| (a.t_start.t, a.n))
+                .collect();
+            tracing::warn!(
+                "process_incoming_ack: unexpected ACK for t: {} ssi: {} got n {}. Pending (tn,expected_n) = {:?}",
+                tn, ssi, n, pending
+            );
+        } else {
+            tracing::debug!(
+                "process_incoming_ack: unexpected ACK for t: {} ssi: {} got n {} (no pending expectation)",
+                tn, ssi, n
+            );
+        }
     }
 
     fn rx_tma_prim(&mut self, queue: &mut MessageQueue, message: SapMsg) {
@@ -174,8 +177,17 @@ impl Llc {
             panic!()
         };
 
+        // LLC/UMAC scheduling uses the UL time-domain in this stack (UL = DL - 2 timeslots).
+        // For individual (non-GSSI) traffic, convert the DL tick-time to UL time so that
+        // per-timeslot schedulers and ACK matching stay consistent.
+        let sched_time = if prim.main_address.ssi_type == SsiType::Gssi {
+            message.dltime
+        } else {
+            message.dltime.add_timeslots(-2)
+        };
+
         // If an ack still needs to be sent, get the relevant expected sequence number
-        let out_ack_n = self.get_out_ack_n_if_any(message.dltime.t, prim.main_address);
+        let out_ack_n = self.get_out_ack_n_if_any(sched_time.t, prim.main_address);
 
         // Get per-link send sequence number N(S) = V(S), then toggle V(S)
         let ns = self.get_next_send_seq(&prim.main_address);
@@ -200,7 +212,7 @@ impl Llc {
             // Register that we expect an ACK back (acknowledged mode only)
             // In basic link acknowledged mode, the peer returns N(R) = received TL-SDU number (the accepted N(S)).
             // Therefore we expect N(R) == ns for a successful transfer (mod-2).
-            self.register_expected_ack(message.dltime, prim.main_address, ns);
+            self.register_expected_ack(sched_time, prim.main_address, ns);
         } else {
             // BL-DATA (acknowledged, with or without FCS; no piggyback ACK)
             let pdu = BlData {
@@ -214,7 +226,7 @@ impl Llc {
             pdu_buf.seek(0);
             tracing::debug!("-> {:?} sdu {}", pdu, pdu_buf.dump_bin());
             // Register that we expect an ACK back (acknowledged mode)
-            self.register_expected_ack(message.dltime, prim.main_address, ns);
+            self.register_expected_ack(sched_time, prim.main_address, ns);
         }
 
         // TODO FIXME:
@@ -225,7 +237,7 @@ impl Llc {
             sap: Sap::TmaSap,
             src: self.entity(),
             dest: TetraEntity::Umac,
-            dltime: message.dltime,
+            dltime: sched_time,
             msg: SapMsgInner::TmaUnitdataReq(TmaUnitdataReq {
                 req_handle: prim.req_handle,
                 pdu: pdu_buf,
@@ -389,7 +401,9 @@ impl Llc {
             return;
         }
 
-        // If N(S) is present, we need to send a BL-ACK (possibly later in tick_end()).
+        // If N(S) is present, we must acknowledge reception (either via standalone BL-ACK,
+        // or piggybacked as N(R) in a BL-ADATA when we next send to this SSI).
+
         if let Some(ns) = ns {
             // ETSI: BL-ACK carries N(R) = V(R) = the received TL-SDU number (accepted N(S)).
             self.schedule_outgoing_ack(message.dltime, prim.main_address, ns);
@@ -511,10 +525,10 @@ impl TetraEntityTrait for Llc {
             pdu_buf.seek(0);
             tracing::debug!("-> {:?} {}", pdu, pdu_buf.dump_bin());
 
-            // We're sending an ACK for a received uplink message, however, we don't have that message here
-            // Since DL is two slots ahead of UL, we will correct that. We now have the dltime for reception
-            // of the original message.
-            let dltime = self.dltime.add_timeslots(-2);
+            // The stack timestamps uplink-originated messages in the UL time-domain (UL = DL - 2).
+            // Keep that domain here: use the original reception UL time for per-timeslot schedulers.
+            let dltime = ack.t_start;
+
 
             let sapmsg = SapMsg {
                 sap: Sap::TmaSap,

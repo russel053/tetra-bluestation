@@ -1,5 +1,5 @@
-use tetra_core::address::SsiType;
 use tetra_core::{BitBuffer, Direction, PhyBlockNum, PhysicalChannel, TdmaTime, TetraAddress, Todo, unimplemented_log};
+use tetra_core::address::SsiType;
 use tetra_saps::{
     control::call_control::Circuit,
     tmv::{TmvUnitdataReq, TmvUnitdataReqSlot, enums::logical_chans::LogicalChannel},
@@ -192,6 +192,7 @@ impl BsChannelScheduler {
         }
         self.is_hangtime_effective(ts)
     }
+
 
     fn is_hangtime_effective(&self, ts: u8) -> bool {
         let idx = ts as usize - 1;
@@ -435,13 +436,7 @@ impl BsChannelScheduler {
             match (a, b) {
                 (FirstSubslotGranted, _) | (_, FirstSubslotGranted) => FirstSubslotGranted,
                 (SecondSubslotGranted, _) | (_, SecondSubslotGranted) => SecondSubslotGranted,
-                _ => {
-                    if a.into_raw() >= b.into_raw() {
-                        a
-                    } else {
-                        b
-                    }
-                }
+                _ => if a.into_raw() >= b.into_raw() { a } else { b },
             }
         }
 
@@ -465,8 +460,7 @@ impl BsChannelScheduler {
                 return;
             }
         }
-        if let Some(i) = self
-            .dltx_next_slot_queue
+        if let Some(i) = self.dltx_next_slot_queue
             .iter()
             .position(|e| matches!(e, DlSchedElem::Grant(a, _) if *a == addr))
         {
@@ -759,7 +753,11 @@ impl BsChannelScheduler {
 
                         DlSchedElem::Grant(addr, grant) => {
                             // Dedicated minimal MAC-RESOURCE for random-access response.
-                            tracing::debug!("dl_build_block_from_signalling_schedule: sending GRANT on ts {} for {}", ts.t, addr);
+                            tracing::debug!(
+                                "dl_build_block_from_signalling_schedule: sending GRANT on ts {} for {}",
+                                ts.t,
+                                addr
+                            );
                             let mut buf = buf_opt.unwrap_or_else(|| BitBuffer::new(SCH_F_CAP));
                             let pdu = Self::dl_make_minimal_resource(&addr, Some(grant), true);
                             let mut fragger = BsFragger::new(pdu, BitBuffer::new(0));
@@ -770,7 +768,11 @@ impl BsChannelScheduler {
 
                         DlSchedElem::RandomAccessAck(addr) => {
                             // Dedicated minimal MAC-RESOURCE for random-access response.
-                            tracing::debug!("dl_build_block_from_signalling_schedule: sending ACK on ts {} for {}", ts.t, addr);
+                            tracing::debug!(
+                                "dl_build_block_from_signalling_schedule: sending ACK on ts {} for {}",
+                                ts.t,
+                                addr
+                            );
                             let mut buf = buf_opt.unwrap_or_else(|| BitBuffer::new(SCH_F_CAP));
                             let pdu = Self::dl_make_minimal_resource(&addr, None, true);
                             let mut fragger = BsFragger::new(pdu, BitBuffer::new(0));
@@ -940,18 +942,7 @@ impl BsChannelScheduler {
             }
 
             // 2) Any remaining one-shot MAC-RESOURCE next (incl. group/broadcast)
-            if let Some(i) = q
-                .iter()
-                .position(|e| matches!(e, DlSchedElem::Resource(_, _, repeat) if *repeat == 0))
-            {
-                return Some(q.remove(i));
-            }
-
-            // 3) Prefer continuing individual fragments before group fragments
-            if let Some(i) = q.iter().position(|e| match e {
-                DlSchedElem::FragBuf(f) => !f.is_group_addr(),
-                _ => false,
-            }) {
+            if let Some(i) = q.iter().position(|e| matches!(e, DlSchedElem::Resource(_, _, repeat) if *repeat == 0)) {
                 return Some(q.remove(i));
             }
         }
@@ -1007,6 +998,7 @@ impl BsChannelScheduler {
         // Urgent control-plane items (random access ACK / grants) are promoted to FACCH/stealing instead.
         let dl_is_traffic = dl_circuit_active && !hang_effective;
         let ul_is_traffic = ul_circuit_active;
+
 
         // Build the block for this timeslot with anything scheduled (traffic or signalling)
         // For traffic timeslots, also check for FACCH/stealing (STCH half-slot)
@@ -1253,12 +1245,12 @@ impl BsChannelScheduler {
                     if hang_effective && (dl_traffic_usage.is_some() || ul_traffic_usage.is_some()) {
                         aach.dl_usage = AccessAssignDlUsage::AssignedControl;
                         aach.ul_usage = AccessAssignUlUsage::CommonAndAssigned;
-                        // ACCESS-ASSIGN header=1 requires an access field for both UL subslots.
-                        // Keep it consistent with TS1 defaults.
-                        aach.f2_af = Some(AccessField {
-                            access_code: 0,
-                            base_frame_len: 4,
-                        });
+	                    // ACCESS-ASSIGN header=1 requires an access field for both UL subslots.
+	                    // Keep it consistent with TS1 defaults.
+	                    aach.f2_af = Some(AccessField {
+	                        access_code: 0,
+	                        base_frame_len: 4,
+	                    });
                     } else {
                         aach.dl_usage = if let Some(usage) = dl_traffic_usage {
                             AccessAssignDlUsage::Traffic(usage)

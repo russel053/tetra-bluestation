@@ -16,48 +16,35 @@ pub enum MessagePrio {
 }
 
 pub struct MessageQueue {
-    immediate: VecDeque<SapMsg>,
-    normal: VecDeque<SapMsg>,
+    q: VecDeque<SapMsg>,
 }
 
 impl MessageQueue {
     pub fn new() -> Self {
-        Self {
-            immediate: VecDeque::new(),
-            normal: VecDeque::new(),
-        }
+        Self { q: VecDeque::new() }
     }
 
     pub fn push_back(&mut self, message: SapMsg) {
-        self.normal.push_back(message);
+        self.q.push_back(message);
     }
 
     pub fn push_prio(&mut self, message: SapMsg, prio: MessagePrio) {
         match prio {
-            MessagePrio::Immediate => {
-                // Keep FIFO order within the immediate priority queue.
-                self.immediate.push_back(message);
-            }
-            MessagePrio::Normal => {
-                self.normal.push_back(message);
-            }
+            MessagePrio::Immediate => self.q.push_front(message),
+            MessagePrio::Normal => self.q.push_back(message),
         }
     }
 
     pub fn pop_front(&mut self) -> Option<SapMsg> {
-        if let Some(m) = self.immediate.pop_front() {
-            Some(m)
-        } else {
-            self.normal.pop_front()
-        }
+        self.q.pop_front()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.immediate.is_empty() && self.normal.is_empty()
+        self.q.is_empty()
     }
 
     pub fn len(&self) -> usize {
-        self.immediate.len() + self.normal.len()
+        self.q.len()
     }
 }
 

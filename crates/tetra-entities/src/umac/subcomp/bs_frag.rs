@@ -42,14 +42,6 @@ impl BsFragger {
         }
     }
 
-    /// True if this fragger targets a group address (GSSI).
-    pub fn is_group_addr(&self) -> bool {
-        matches!(
-            self.resource.addr,
-            Some(a) if a.ssi_type == tetra_core::address::SsiType::Gssi
-        )
-    }
-
     /// Return the computed MAC-RESOURCE header length in bits.
     pub fn header_len_bits(&self) -> usize {
         self.resource.compute_header_len()
@@ -138,16 +130,13 @@ impl BsFragger {
         } else {
             // We need to start fragmentation. No fill bits are needed
             // Avoid starting fragmentation with a tiny first fragment. Some terminals are sensitive to
-            // interleaved / micro-fragmented MAC-RESOURCE sequences (especially group-call signalling with ChanAlloc).
+            // interleaved / micro-fragmented MAC-RESOURCE sequences (especially signalling with ChanAlloc).
             let sdu_bits_avail = slot_cap_bits - hdr_len_bits;
             let min_first_frag_bits = if self.needs_clean_slot_start() { MIN_SLOT_CAP_FOR_FRAG } else { 0 };
             if sdu_bits_avail < min_first_frag_bits {
                 tracing::debug!(
                     "-> frag_start_too_small (cap={} hdr={} sdu_bits_avail={} min={}), trying again next frame",
-                    slot_cap_bits,
-                    hdr_len_bits,
-                    sdu_bits_avail,
-                    min_first_frag_bits
+                    slot_cap_bits, hdr_len_bits, sdu_bits_avail, min_first_frag_bits
                 );
                 return false;
             }

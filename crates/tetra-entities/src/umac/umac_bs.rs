@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use std::panic;
+use std::collections::HashMap;
 
 use tetra_config::SharedConfig;
 use tetra_core::freqs::FreqInfo;
@@ -8,9 +8,9 @@ use tetra_core::{BitBuffer, Direction, PhyBlockNum, Sap, SsiType, TdmaTime, Tetr
 use tetra_pdus::mle::fields::bs_service_details::BsServiceDetails;
 use tetra_pdus::mle::pdus::d_mle_sync::DMleSync;
 use tetra_pdus::mle::pdus::d_mle_sysinfo::DMleSysinfo;
+use tetra_pdus::umac::enums::mac_pdu_type::MacPduType;
 use tetra_pdus::umac::enums::basic_slotgrant_cap_alloc::BasicSlotgrantCapAlloc;
 use tetra_pdus::umac::enums::basic_slotgrant_granting_delay::BasicSlotgrantGrantingDelay;
-use tetra_pdus::umac::enums::mac_pdu_type::MacPduType;
 use tetra_pdus::umac::enums::sysinfo_opt_field_flag::SysinfoOptFieldFlag;
 use tetra_pdus::umac::fields::basic_slotgrant::BasicSlotgrant;
 use tetra_pdus::umac::fields::channel_allocation::ChanAllocElement;
@@ -78,6 +78,7 @@ impl Default for UlSecondHalfCtx {
         }
     }
 }
+
 
 pub struct UmacBs {
     self_component: TetraEntity,
@@ -292,10 +293,7 @@ impl UmacBs {
     /// The indicator is carried in-band (e.g. MAC-DATA length_ind=0x3E/0x3F (1111102/1111112) or MAC-U-SIGNAL second_half_stolen=1)
     /// and must be acted on before the PHY delivers block2 to LMAC.
     fn signal_ul_second_half_stolen(queue: &mut MessageQueue, ul_time: TdmaTime) {
-        tracing::info!(
-            "signal_ul_second_half_stolen: notifying LMAC to treat block2 as STCH at {}",
-            ul_time
-        );
+        tracing::info!("signal_ul_second_half_stolen: notifying LMAC to treat block2 as STCH at {}", ul_time);
         let req = tetra_saps::tmv::TmvConfigureReq {
             is_traffic: Some(true),
             second_half_stolen: Some(true),
@@ -312,6 +310,7 @@ impl UmacBs {
         };
         queue.push_prio(msg, MessagePrio::Immediate);
     }
+
 
     fn rx_tmv_prim(&mut self, queue: &mut MessageQueue, message: SapMsg) {
         tracing::trace!("rx_tmv_prim");
@@ -375,11 +374,7 @@ impl UmacBs {
             let ctx = &mut self.ul_second_half_ctx[ts_idx];
             if ctx.active && ctx.time == rx_time && ctx.expect_mac_end {
                 if !rx_crc_pass {
-                    tracing::warn!(
-                        "UL STCH block2 CRC fail while expecting MAC-END (ts {} ssi {}); discarding first fragment",
-                        rx_time.t,
-                        ctx.ssi
-                    );
+                    tracing::warn!("UL STCH block2 CRC fail while expecting MAC-END (ts {} ssi {}); discarding first fragment", rx_time.t, ctx.ssi);
                     self.defrag.discard(ctx.ssi, rx_time);
                     *ctx = UlSecondHalfCtx::default();
                     return;
@@ -734,6 +729,7 @@ impl UmacBs {
         prim.pdu.set_raw_pos(prim.pdu.get_raw_start() + pdu_len_bits + num_fill_bits);
         prim.pdu.set_raw_start(prim.pdu.get_raw_pos());
 
+
         second_half_hint
     }
 
@@ -835,7 +831,9 @@ impl UmacBs {
                 // Control channel MAC-ACCESS with capacity request: check if it matches the last
                 // floor owner of any hanging traffic slot.
                 for ts in 2..=4u8 {
-                    if self.channel_scheduler.hangtime_active(ts) && self.last_floor_owner[ts as usize - 1] == Some(addr.ssi) {
+                    if self.channel_scheduler.hangtime_active(ts)
+                        && self.last_floor_owner[ts as usize - 1] == Some(addr.ssi)
+                    {
                         self.pending_floor_req[ts as usize - 1] = Some((addr.ssi, message.dltime));
                         queue.push_prio(
                             SapMsg {
@@ -843,7 +841,10 @@ impl UmacBs {
                                 src: TetraEntity::Umac,
                                 dest: TetraEntity::Cmce,
                                 dltime: message.dltime,
-                                msg: SapMsgInner::CmceCallControl(CallControl::UplinkPttBounce { ts, ssi: addr.ssi }),
+                                msg: SapMsgInner::CmceCallControl(CallControl::UplinkPttBounce {
+                                    ts,
+                                    ssi: addr.ssi,
+                                }),
                             },
                             MessagePrio::Immediate,
                         );
@@ -872,6 +873,7 @@ impl UmacBs {
             }
         }
 
+
         // Schedule acknowledgement of this message.
         // NOTE: In the field we sometimes see MAC-ACCESS decoded on a traffic TS during hangtime
         // (e.g. due to duplicate burst delivery). For control-plane stability (MM attach/detach,
@@ -882,7 +884,11 @@ impl UmacBs {
         // ReservationRequirement. If we only ACK but never grant UL capacity, they can time out and
         // re-attach ("disconnect"). Provide a conservative, rate-limited half-slot grant on TS1
         // after a couple of retries.
-        if message.dltime.t == 1 && addr.ssi_type == SsiType::Ssi && pdu.reservation_req.is_none() && !pdu.is_null_pdu() {
+        if message.dltime.t == 1
+            && addr.ssi_type == SsiType::Ssi
+            && pdu.reservation_req.is_none()
+            && !pdu.is_null_pdu()
+        {
             let entry = self.mac_access_retries.entry(addr.ssi).or_insert((message.dltime, 0));
             let age = entry.0.age(message.dltime);
             if age > 72 || age < 0 {
@@ -901,6 +907,7 @@ impl UmacBs {
                 entry.1 = 0;
             }
         }
+
 
         // Decrypt if needed
         if pdu.encrypted {
@@ -1335,6 +1342,7 @@ impl UmacBs {
         };
         queue.push_back(m);
 
+
         second_half_hint
     }
 
@@ -1714,7 +1722,7 @@ impl UmacBs {
             }
             CallControl::Close(_, _) => {
                 self.rx_control_circuit_close(queue, prim);
-            } // Floor control drives traffic↔signalling transitions during hangtime.
+            }            // Floor control drives traffic↔signalling transitions during hangtime.
             CallControl::FloorReleased { ts, .. } => {
                 self.channel_scheduler.set_hangtime(ts, true);
                 if (1..=4).contains(&ts) {
@@ -1759,7 +1767,9 @@ impl UmacBs {
             }
 
             // NetworkCall* are for CMCE ↔ Brew, not UMAC.
-            CallControl::NetworkCallStart { .. } | CallControl::NetworkCallReady { .. } | CallControl::NetworkCallEnd { .. } => {
+            CallControl::NetworkCallStart { .. }
+            | CallControl::NetworkCallReady { .. }
+            | CallControl::NetworkCallEnd { .. } => {
                 tracing::trace!("rx_control: ignoring CMCE-Brew notification (not for UMAC)");
             }
         }
