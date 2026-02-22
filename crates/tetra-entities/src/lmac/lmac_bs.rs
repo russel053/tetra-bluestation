@@ -84,6 +84,7 @@ impl LmacBs {
         Self {
             config,
             stack_mode,
+            scrambling_code: sc,
             dltime: TdmaTime::default(),
             uplink_phy_chan: [PhysicalChannel::Unallocated; 4],
             ul_second_block_stolen: false,
