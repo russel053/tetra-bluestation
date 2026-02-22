@@ -4,7 +4,7 @@ use std::panic;
 use crate::{MessageQueue, TetraEntityTrait};
 use tetra_config::SharedConfig;
 use tetra_core::tetra_entities::TetraEntity;
-use tetra_core::{BitBuffer, Sap, SsiType, TdmaTime, TetraAddress, unimplemented_log};
+use tetra_core::{BitBuffer, Sap, TdmaTime, TetraAddress, unimplemented_log};
 use tetra_saps::tla::{TlaTlDataIndBl, TlaTlUnitdataIndBl};
 use tetra_saps::tma::TmaUnitdataReq;
 use tetra_saps::{SapMsg, SapMsgInner};
@@ -177,14 +177,12 @@ impl Llc {
             panic!()
         };
 
-        // LLC/UMAC scheduling uses the UL time-domain in this stack (UL = DL - 2 timeslots).
-        // For individual (non-GSSI) traffic, convert the DL tick-time to UL time so that
-        // per-timeslot schedulers and ACK matching stay consistent.
-        let sched_time = if prim.main_address.ssi_type == SsiType::Gssi {
-            message.dltime
-        } else {
-            message.dltime.add_timeslots(-2)
-        };
+        // NOTE: In this codebase, `dltime` is the *canonical* time-domain used across layers.
+        // Uplink events are already mapped into the same `dltime` coordinate by the PHY.
+        // Therefore we must NOT apply an extra “UL = DL-2” conversion here, otherwise we end up
+        // scheduling downlink signalling on the wrong timeslot (e.g. TS1 -> TS3 in the previous
+        // frame), which breaks attach/registration.
+        let sched_time = message.dltime;
 
         // If an ack still needs to be sent, get the relevant expected sequence number
         let out_ack_n = self.get_out_ack_n_if_any(sched_time.t, prim.main_address);
