@@ -1,5 +1,5 @@
 use crate::MessageQueue;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 use tetra_config::bluestation::SharedConfig;
 use tetra_core::tetra_entities::TetraEntity;
@@ -113,27 +113,12 @@ impl SdsBsSubentity {
         self.config = config;
     }
 
-    fn should_handle_locally(&self, dst_ssi: u32) -> bool {
-        let cfg = self.config.config();
 
-        // Local-only build: always handle SDS when Brew is not configured.
-        // When Brew is configured, only handle SDS for locally-routable SSI ranges.
-        if cfg.brew.is_none() {
-            return true;
-        }
-        cfg.cell.local_ssi_ranges.contains(dst_ssi)
+
+    fn should_handle_locally(&self, _dst_ssi: u32) -> bool {
+        true
     }
 
-        // 2) Brew configured but disconnected => LST-like local operation.
-        // Only handle SDS for locally-routable SSI ranges.
-        // This avoids flooding MCCH/TS1 with synthetic ACKs for SDS that would normally be routed via the SwMI.
-        if !self.config.state_read().network_connected {
-            return cfg.cell.local_ssi_ranges.contains(dst_ssi);
-        }
-
-        // 3) Brew connected, but destination range is configured as local.
-        cfg.cell.local_ssi_ranges.contains(dst_ssi)
-    }
 
     fn reserve_sds_dl_ts1(&mut self, base: TdmaTime) -> TdmaTime {
         let candidate = base.forward_to_timeslot(1);
@@ -360,8 +345,6 @@ impl SdsBsSubentity {
             return;
         }
 
-        // Network/SwMI routing is intentionally not implemented in the local-only PR.
-        tracing::debug!("SDS RX: dst not local; dropping src={} dst={}", src_addr, dst_addr);
     }
 
     #[allow(dead_code)]
